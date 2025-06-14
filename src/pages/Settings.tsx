@@ -18,7 +18,7 @@ import { StreamSettings } from '@/components/StreamSettings';
 import { EmergencyContacts } from '@/components/EmergencyContacts';
 import { BackupRestore } from '@/components/BackupRestore';
 import { Link } from 'react-router-dom';
-import { InstallationScripts } from '@/components/InstallationScripts';
+import InstallationScripts from '@/components/InstallationScripts';
 
 const Settings = () => {
   return (
