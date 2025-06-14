@@ -8,7 +8,7 @@ import {
   SidebarInset 
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { Camera, Settings, Image, Monitor, Video, Bell, Shield, Plus } from 'lucide-react';
+import { Camera, Settings, Image, Monitor, Video, Bell, Shield, Plus, Save } from 'lucide-react';
 import { CameraGrid } from '@/components/CameraGrid';
 import { MotionLog } from '@/components/MotionLog';
 import { SnapshotGallery } from '@/components/SnapshotGallery';
@@ -116,6 +116,19 @@ const Index = () => {
     if (!isFullscreen) {
       setLayout(12); // Show all cameras in fullscreen
     }
+  };
+
+  const saveLayout = () => {
+    const config = {
+      layout,
+      fullscreen: isFullscreen,
+      timestamp: Date.now()
+    };
+    localStorage.setItem('jericho-config', JSON.stringify(config));
+    toast({
+      title: "Layout Saved",
+      description: "Your camera layout configuration has been saved",
+    });
   };
 
   const captureSnapshot = async (cameraId) => {
@@ -290,6 +303,15 @@ const Index = () => {
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Add Cameras
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={saveLayout}
+                  className="jericho-btn-primary border-jericho-light/30 text-white hover:jericho-accent-bg hover:text-jericho-primary font-semibold text-xs uppercase tracking-wide"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  Save Layout
                 </Button>
                 <Button
                   variant="outline"

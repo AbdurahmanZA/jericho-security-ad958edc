@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Camera, Play, Square, Image } from 'lucide-react';
+import { Camera, Play, Square, Image, Edit2, Check, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface CameraGridProps {
@@ -12,16 +12,23 @@ interface CameraGridProps {
 
 export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, onSnapshot }) => {
   const [cameraUrls, setCameraUrls] = useState<Record<number, string>>({});
+  const [cameraNames, setCameraNames] = useState<Record<number, string>>({});
   const [activeStreams, setActiveStreams] = useState<Record<number, boolean>>({});
   const [editingCamera, setEditingCamera] = useState<number | null>(null);
+  const [editingName, setEditingName] = useState<number | null>(null);
   const [tempUrl, setTempUrl] = useState('');
+  const [tempName, setTempName] = useState('');
   const { toast } = useToast();
 
   useEffect(() => {
-    // Load saved camera URLs
+    // Load saved camera URLs and names
     const savedUrls = localStorage.getItem('jericho-camera-urls');
+    const savedNames = localStorage.getItem('jericho-camera-names');
     if (savedUrls) {
       setCameraUrls(JSON.parse(savedUrls));
+    }
+    if (savedNames) {
+      setCameraNames(JSON.parse(savedNames));
     }
   }, []);
 
@@ -29,6 +36,11 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     // Save camera URLs whenever they change
     localStorage.setItem('jericho-camera-urls', JSON.stringify(cameraUrls));
   }, [cameraUrls]);
+
+  useEffect(() => {
+    // Save camera names whenever they change
+    localStorage.setItem('jericho-camera-names', JSON.stringify(cameraNames));
+  }, [cameraNames]);
 
   const getGridClasses = () => {
     if (isFullscreen) {
@@ -133,10 +145,24 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     });
   };
 
+  const handleNameSubmit = (cameraId: number) => {
+    if (tempName.trim()) {
+      setCameraNames(prev => ({ ...prev, [cameraId]: tempName.trim() }));
+      toast({
+        title: "Camera Renamed",
+        description: `Camera ${cameraId} renamed to "${tempName.trim()}"`,
+      });
+    }
+    setEditingName(null);
+    setTempName('');
+  };
+
   const renderCamera = (cameraId: number) => {
     const isActive = activeStreams[cameraId];
     const url = cameraUrls[cameraId];
+    const name = cameraNames[cameraId] || `Camera ${cameraId}`;
     const isEditing = editingCamera === cameraId;
+    const isEditingName = editingName === cameraId;
 
     return (
       <div 
@@ -145,9 +171,54 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
       >
         {/* Camera Header */}
         <div className="flex items-center justify-between p-2 bg-gray-900 border-b border-gray-700">
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 flex-1">
             <Camera className="w-4 h-4" />
-            <span className="text-sm font-medium">Camera {cameraId}</span>
+            {isEditingName ? (
+              <div className="flex items-center space-x-1 flex-1">
+                <Input
+                  value={tempName}
+                  onChange={(e) => setTempName(e.target.value)}
+                  className="h-6 text-xs py-1 px-2"
+                  placeholder="Camera name"
+                  onKeyPress={(e) => e.key === 'Enter' && handleNameSubmit(cameraId)}
+                  autoFocus
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleNameSubmit(cameraId)}
+                  className="h-6 w-6 p-0"
+                >
+                  <Check className="w-3 h-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setEditingName(null);
+                    setTempName('');
+                  }}
+                  className="h-6 w-6 p-0"
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-2 flex-1">
+                <span className="text-sm font-medium truncate">{name}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setEditingName(cameraId);
+                    setTempName(name);
+                  }}
+                  className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:opacity-100"
+                >
+                  <Edit2 className="w-3 h-3" />
+                </Button>
+              </div>
+            )}
             {isActive && (
               <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" title="Live" />
             )}
@@ -186,7 +257,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
         </div>
 
         {/* Video Area */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative group">
           {isActive ? (
             <video
               className="w-full h-full object-cover"
