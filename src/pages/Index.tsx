@@ -15,6 +15,7 @@ import { SnapshotGallery } from '@/components/SnapshotGallery';
 import { HikvisionSetup } from '@/components/HikvisionSetup';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { Link } from 'react-router-dom';
 
 const Index = () => {
   const [layout, setLayout] = useState(4);
@@ -243,6 +244,16 @@ const Index = () => {
                     <Settings className="w-3 h-3 mr-2" />
                     HIKVISION SETUP
                   </Button>
+                  <Link to="/settings">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-start text-xs font-semibold jericho-btn-primary border-jericho-light/30 text-white hover:jericho-accent-bg hover:text-jericho-primary"
+                    >
+                      <Settings className="w-3 h-3 mr-2" />
+                      SYSTEM SETTINGS
+                    </Button>
+                  </Link>
                 </div>
               </div>
 
