@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,7 +34,7 @@ sudo systemctl stop apache2 && \\
 sudo rm -rf /var/www/html/* && \\
 sudo chown -R www-data:www-data /var/www/html/ && \\
 sudo rm -rf jericho-security-system
-git clone https://github.com/your-username/jericho-security-system.git && \\
+git clone https://github.com/abdurahmanza/jericho-security-system.git && \\
 cd jericho-security-system/ && \\
 npm install && \\
 npm run build && \\
@@ -54,7 +53,7 @@ echo Removing old installation...
 rmdir /s /q jericho-security-system
 
 echo Cloning repository...
-git clone https://github.com/your-username/jericho-security-system.git
+git clone https://github.com/abdurahmanza/jericho-security-system.git
 cd jericho-security-system
 
 echo Installing dependencies...
@@ -91,7 +90,7 @@ sudo rm -rf /usr/local/var/www/*
 sudo rm -rf jericho-security-system
 
 # Clone and build
-git clone https://github.com/your-username/jericho-security-system.git && \\
+git clone https://github.com/abdurahmanza/jericho-security-system.git && \\
 cd jericho-security-system/ && \\
 npm install && \\
 npm run build && \\
@@ -108,20 +107,20 @@ docker-compose up -d
 # Or using Docker directly:
 docker stop jericho-security || true
 docker rm jericho-security || true
-docker pull your-username/jericho-security-system:latest
+docker pull abdurahmanza/jericho-security-system:latest
 docker run -d \\
   --name jericho-security \\
   -p 3000:3000 \\
   -p 3001:3001 \\
   -v jericho-data:/app/data \\
   --restart unless-stopped \\
-  your-username/jericho-security-system:latest`,
+  abdurahmanza/jericho-security-system:latest`,
 
     dockerCompose: `version: '3.8'
 
 services:
   jericho-security:
-    image: your-username/jericho-security-system:latest
+    image: abdurahmanza/jericho-security-system:latest
     container_name: jericho-security
     ports:
       - "3000:3000"
@@ -385,7 +384,6 @@ networks:
         </CardHeader>
         <CardContent className="text-sm text-orange-700 dark:text-orange-300">
           <ul className="space-y-2">
-            <li>• Update the GitHub repository URL to match your actual repository</li>
             <li>• Ensure all prerequisites are installed before running scripts</li>
             <li>• Run with appropriate privileges (sudo/Administrator)</li>
             <li>• Test in a development environment first</li>
