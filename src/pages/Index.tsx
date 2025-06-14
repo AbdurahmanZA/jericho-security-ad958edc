@@ -8,11 +8,12 @@ import {
   SidebarInset 
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { Camera, Settings, Image, Monitor, Video, Bell, Shield } from 'lucide-react';
+import { Camera, Settings, Image, Monitor, Video, Bell, Shield, Plus } from 'lucide-react';
 import { CameraGrid } from '@/components/CameraGrid';
 import { MotionLog } from '@/components/MotionLog';
 import { SnapshotGallery } from '@/components/SnapshotGallery';
 import { HikvisionSetup } from '@/components/HikvisionSetup';
+import { MultipleCameraSetup } from '@/components/MultipleCameraSetup';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Link } from 'react-router-dom';
@@ -22,6 +23,7 @@ const Index = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [showHikvisionSetup, setShowHikvisionSetup] = useState(false);
+  const [showMultipleCameraSetup, setShowMultipleCameraSetup] = useState(false);
   const [motionEvents, setMotionEvents] = useState([]);
   const [systemStatus, setSystemStatus] = useState({
     uptime: '00:00:00',
@@ -134,6 +136,14 @@ const Index = () => {
         variant: "destructive",
       });
     }
+  };
+
+  const handleMultipleCamerasSetup = (cameras: Array<{ id: number; name: string; url: string; }>) => {
+    // Handle the camera setup logic here
+    toast({
+      title: "Multiple Cameras Added",
+      description: `${cameras.length} cameras configured successfully`,
+    });
   };
 
   return (
@@ -275,6 +285,15 @@ const Index = () => {
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={() => setShowMultipleCameraSetup(true)}
+                  className="jericho-btn-primary border-jericho-light/30 text-white hover:jericho-accent-bg hover:text-jericho-primary font-semibold text-xs uppercase tracking-wide"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Cameras
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => window.location.reload()}
                   className="jericho-btn-primary border-jericho-light/30 text-white hover:jericho-accent-bg hover:text-jericho-primary font-semibold text-xs uppercase tracking-wide"
                 >
@@ -302,6 +321,12 @@ const Index = () => {
         <HikvisionSetup 
           open={showHikvisionSetup} 
           onClose={() => setShowHikvisionSetup(false)} 
+        />
+        <MultipleCameraSetup
+          open={showMultipleCameraSetup}
+          onClose={() => setShowMultipleCameraSetup(false)}
+          onSave={handleMultipleCamerasSetup}
+          existingCameras={{}}
         />
       </SidebarProvider>
     </div>

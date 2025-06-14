@@ -1,10 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Camera, Play, Square, Image, Plus } from 'lucide-react';
+import { Camera, Play, Square, Image } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { MultipleCameraSetup } from './MultipleCameraSetup';
 
 interface CameraGridProps {
   layout: number;
@@ -17,7 +15,6 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   const [activeStreams, setActiveStreams] = useState<Record<number, boolean>>({});
   const [editingCamera, setEditingCamera] = useState<number | null>(null);
   const [tempUrl, setTempUrl] = useState('');
-  const [showMultipleSetup, setShowMultipleSetup] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -255,30 +252,8 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   const camerasToShow = isFullscreen ? 12 : layout;
 
   return (
-    <div className="space-y-4">
-      {/* Add Multiple Cameras Button */}
-      <div className="flex justify-end">
-        <Button
-          onClick={() => setShowMultipleSetup(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Multiple Cameras
-        </Button>
-      </div>
-
-      {/* Camera Grid */}
-      <div className={getGridClasses()}>
-        {Array.from({ length: camerasToShow }, (_, i) => renderCamera(i + 1))}
-      </div>
-
-      {/* Multiple Camera Setup Modal */}
-      <MultipleCameraSetup
-        open={showMultipleSetup}
-        onClose={() => setShowMultipleSetup(false)}
-        onSave={handleMultipleCamerasSetup}
-        existingCameras={cameraUrls}
-      />
+    <div className={getGridClasses()}>
+      {Array.from({ length: camerasToShow }, (_, i) => renderCamera(i + 1))}
     </div>
   );
 };
