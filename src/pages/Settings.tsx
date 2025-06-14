@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { 
   SidebarProvider, 
@@ -19,6 +18,7 @@ import { StreamSettings } from '@/components/StreamSettings';
 import { EmergencyContacts } from '@/components/EmergencyContacts';
 import { BackupRestore } from '@/components/BackupRestore';
 import { Link } from 'react-router-dom';
+import { InstallationScripts } from '@/components/InstallationScripts';
 
 const Settings = () => {
   return (
@@ -85,7 +85,7 @@ const Settings = () => {
 
             <main className="flex-1 p-6 bg-background">
               <Tabs defaultValue="hikvision" className="space-y-6">
-                <TabsList className="grid w-full grid-cols-5">
+                <TabsList className="grid w-full grid-cols-6">
                   <TabsTrigger value="hikvision" className="flex items-center space-x-2">
                     <Camera className="w-4 h-4" />
                     <span>Hikvision</span>
@@ -105,6 +105,10 @@ const Settings = () => {
                   <TabsTrigger value="backup" className="flex items-center space-x-2">
                     <Database className="w-4 h-4" />
                     <span>Backup</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="installation" className="flex items-center space-x-2">
+                    <Database className="w-4 h-4" />
+                    <span>Installation</span>
                   </TabsTrigger>
                 </TabsList>
 
@@ -135,6 +139,12 @@ const Settings = () => {
                 <TabsContent value="backup">
                   <Card className="p-6">
                     <BackupRestore />
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="installation">
+                  <Card className="p-6">
+                    <InstallationScripts />
                   </Card>
                 </TabsContent>
               </Tabs>
