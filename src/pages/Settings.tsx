@@ -11,11 +11,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
-import { ArrowLeft, Shield, Settings as SettingsIcon, Camera, Brain } from 'lucide-react';
+import { ArrowLeft, Shield, Settings as SettingsIcon, Camera, Brain, Phone, Database } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { HikvisionSettings } from '@/components/HikvisionSettings';
 import { AISettings } from '@/components/AISettings';
 import { StreamSettings } from '@/components/StreamSettings';
+import { EmergencyContacts } from '@/components/EmergencyContacts';
+import { BackupRestore } from '@/components/BackupRestore';
 import { Link } from 'react-router-dom';
 
 const Settings = () => {
@@ -62,7 +64,8 @@ const Settings = () => {
                     <p>• Hikvision Camera Setup</p>
                     <p>• AI Object Recognition</p>
                     <p>• Stream Management</p>
-                    <p>• System Configuration</p>
+                    <p>• Emergency Contacts</p>
+                    <p>• Backup & Restore</p>
                   </div>
                 </div>
               </div>
@@ -82,7 +85,7 @@ const Settings = () => {
 
             <main className="flex-1 p-6 bg-background">
               <Tabs defaultValue="hikvision" className="space-y-6">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-5">
                   <TabsTrigger value="hikvision" className="flex items-center space-x-2">
                     <Camera className="w-4 h-4" />
                     <span>Hikvision</span>
@@ -94,6 +97,14 @@ const Settings = () => {
                   <TabsTrigger value="streams" className="flex items-center space-x-2">
                     <SettingsIcon className="w-4 h-4" />
                     <span>Streams</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="emergency" className="flex items-center space-x-2">
+                    <Phone className="w-4 h-4" />
+                    <span>Emergency</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="backup" className="flex items-center space-x-2">
+                    <Database className="w-4 h-4" />
+                    <span>Backup</span>
                   </TabsTrigger>
                 </TabsList>
 
@@ -112,6 +123,18 @@ const Settings = () => {
                 <TabsContent value="streams">
                   <Card className="p-6">
                     <StreamSettings />
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="emergency">
+                  <Card className="p-6">
+                    <EmergencyContacts />
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="backup">
+                  <Card className="p-6">
+                    <BackupRestore />
                   </Card>
                 </TabsContent>
               </Tabs>
