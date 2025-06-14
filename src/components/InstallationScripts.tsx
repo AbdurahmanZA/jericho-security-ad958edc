@@ -33,9 +33,9 @@ const InstallationScripts = () => {
 sudo systemctl stop apache2 && \\
 sudo rm -rf /var/www/html/* && \\
 sudo chown -R www-data:www-data /var/www/html/ && \\
-sudo rm -rf jericho-security-system
-git clone https://github.com/abdurahmanza/jericho-security-system.git && \\
-cd jericho-security-system/ && \\
+sudo rm -rf jericho-security-ad958edc
+git clone https://github.com/AbdurahmanZA/jericho-security-ad958edc.git && \\
+cd jericho-security-ad958edc/ && \\
 npm install && \\
 npm run build && \\
 sudo cp -r dist/* /var/www/html/ && \\
@@ -50,11 +50,11 @@ echo Cleaning web directory...
 rmdir /s /q "C:\\inetpub\\wwwroot\\*"
 
 echo Removing old installation...
-rmdir /s /q jericho-security-system
+rmdir /s /q jericho-security-ad958edc
 
 echo Cloning repository...
-git clone https://github.com/abdurahmanza/jericho-security-system.git
-cd jericho-security-system
+git clone https://github.com/AbdurahmanZA/jericho-security-ad958edc.git
+cd jericho-security-ad958edc
 
 echo Installing dependencies...
 npm install
@@ -87,11 +87,11 @@ sudo brew services stop nginx
 
 # Clean web directory
 sudo rm -rf /usr/local/var/www/*
-sudo rm -rf jericho-security-system
+sudo rm -rf jericho-security-ad958edc
 
 # Clone and build
-git clone https://github.com/abdurahmanza/jericho-security-system.git && \\
-cd jericho-security-system/ && \\
+git clone https://github.com/AbdurahmanZA/jericho-security-ad958edc.git && \\
+cd jericho-security-ad958edc/ && \\
 npm install && \\
 npm run build && \\
 sudo cp -r dist/* /usr/local/var/www/ && \\
