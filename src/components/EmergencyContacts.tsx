@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, Phone, Mail, Save, Users, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Phone, Mail, Save, Users, AlertTriangle, Code, Headphones } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface EmergencyContact {
@@ -97,21 +97,19 @@ export const EmergencyContacts: React.FC = () => {
     saveContacts(updatedContacts);
   };
 
-  const dialContact = (contact: EmergencyContact) => {
+  const dialContact = (phone: string) => {
     if (navigator.userAgent.match(/Mobi/)) {
-      window.location.href = `tel:${contact.phone}`;
+      window.location.href = `tel:${phone}`;
     } else {
       toast({
         title: "Dialing Feature",
-        description: `On mobile: ${contact.phone} would be dialed automatically`,
+        description: `On mobile: ${phone} would be dialed automatically`,
       });
     }
   };
 
-  const emailContact = (contact: EmergencyContact) => {
-    if (contact.email) {
-      window.location.href = `mailto:${contact.email}?subject=Security Alert - Jericho System`;
-    }
+  const emailContact = (email: string, subject: string = 'Security Alert - Jericho System') => {
+    window.location.href = `mailto:${email}?subject=${subject}`;
   };
 
   const getPriorityColor = (priority: string) => {
@@ -131,6 +129,37 @@ export const EmergencyContacts: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Developer Support Section */}
+      <div className="p-4 border-2 border-blue-200 rounded-lg bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800">
+        <h4 className="font-semibold mb-3 text-blue-800 dark:text-blue-200 flex items-center">
+          <Code className="w-5 h-5 mr-2" />
+          Developer Support
+        </h4>
+        <p className="text-sm text-blue-700 dark:text-blue-300 mb-4">
+          Need technical support or have questions about the system? Contact our developer team.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => dialContact('0629145963')}
+            className="text-blue-600 border-blue-300 hover:bg-blue-100 dark:text-blue-400 dark:border-blue-600 dark:hover:bg-blue-900/20"
+          >
+            <Phone className="w-3 h-3 mr-1" />
+            Call: 062 914 5963
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => emailContact('info@sandz.co.za', 'Jericho Security System Support')}
+            className="text-blue-600 border-blue-300 hover:bg-blue-100 dark:text-blue-400 dark:border-blue-600 dark:hover:bg-blue-900/20"
+          >
+            <Mail className="w-3 h-3 mr-1" />
+            Email: info@sandz.co.za
+          </Button>
+        </div>
+      </div>
+
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-bold uppercase tracking-wide">Emergency Contacts</h3>
@@ -204,7 +233,7 @@ export const EmergencyContacts: React.FC = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => dialContact(contact)}
+                        onClick={() => dialContact(contact.phone)}
                         disabled={!contact.enabled}
                         className="text-green-600 hover:text-green-700"
                       >
@@ -215,7 +244,7 @@ export const EmergencyContacts: React.FC = () => {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => emailContact(contact)}
+                          onClick={() => emailContact(contact.email!)}
                           disabled={!contact.enabled}
                         >
                           <Mail className="w-3 h-3 mr-1" />
@@ -361,7 +390,7 @@ export const EmergencyContacts: React.FC = () => {
                   key={contact.id}
                   variant="destructive"
                   size="sm"
-                  onClick={() => dialContact(contact)}
+                  onClick={() => dialContact(contact.phone)}
                   className="bg-red-600 hover:bg-red-700"
                 >
                   <Phone className="w-3 h-3 mr-1" />
