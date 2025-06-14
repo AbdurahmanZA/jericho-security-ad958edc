@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   SidebarProvider, 
@@ -15,6 +14,7 @@ import { MotionLog } from '@/components/MotionLog';
 import { SnapshotGallery } from '@/components/SnapshotGallery';
 import { HikvisionSetup } from '@/components/HikvisionSetup';
 import { useToast } from '@/hooks/use-toast';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 const Index = () => {
   const [layout, setLayout] = useState(4);
@@ -136,10 +136,10 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <div className="min-h-screen bg-background text-foreground">
       <SidebarProvider>
         <div className="flex w-full min-h-screen">
-          <Sidebar className="border-r border-gray-700 jericho-primary-bg">
+          <Sidebar className="border-r border-border jericho-primary-bg">
             <SidebarHeader className="p-4 border-b border-jericho-secondary">
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 jericho-gradient rounded-lg flex items-center justify-center jericho-shield">
@@ -252,8 +252,8 @@ const Index = () => {
           </Sidebar>
 
           <SidebarInset className="flex-1">
-            <header className="flex h-16 shrink-0 items-center gap-2 px-4 border-b border-gray-700 jericho-secondary-bg">
-              <SidebarTrigger className="text-white hover:text-jericho-accent" />
+            <header className="flex h-16 shrink-0 items-center gap-2 px-4 border-b border-border jericho-secondary-bg">
+              <SidebarTrigger className="text-foreground hover:text-jericho-accent" />
               <div className="flex items-center space-x-4 ml-auto">
                 <div className="flex items-center space-x-2 text-sm">
                   <div className="w-2 h-2 bg-green-400 rounded-full security-pulse"></div>
@@ -269,10 +269,11 @@ const Index = () => {
                 >
                   Refresh Streams
                 </Button>
+                <ThemeToggle />
               </div>
             </header>
 
-            <main className="flex-1 p-4 bg-gray-900">
+            <main className="flex-1 p-4 bg-background">
               <CameraGrid 
                 layout={layout} 
                 isFullscreen={isFullscreen}

@@ -16,49 +16,49 @@
     --jericho-very-light: #F0F0F0;     /* Very light gray */
     --jericho-dark-teal: #335A63;      /* Dark teal variation */
     
-    /* Design System Colors */
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    /* Light Theme Design System Colors */
+    --background: 0 0% 100%;
+    --foreground: 177 34% 27%;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 0 0% 100%;
+    --card-foreground: 177 34% 27%;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 177 34% 27%;
 
     --primary: 177 34% 27%;             /* Jericho primary */
-    --primary-foreground: 210 40% 98%;
+    --primary-foreground: 0 0% 100%;
 
     --secondary: 200 25% 36%;           /* Jericho secondary */
-    --secondary-foreground: 210 40% 98%;
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 210 40% 98%;
+    --muted-foreground: 215.4 16.3% 46.9%;
 
     --accent: 32 55% 56%;               /* Jericho accent */
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent-foreground: 177 34% 27%;
 
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 177 34% 27%;
     
-    --sidebar-background: 177 34% 22%;   /* Darker teal for sidebar */
-    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-background: 177 34% 27%;   /* Primary teal for sidebar */
+    --sidebar-foreground: 0 0% 100%;
     --sidebar-primary: 177 34% 27%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 200 25% 31%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 200 25% 31%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 200 25% 36%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 200 25% 36%;
+    --sidebar-ring: 177 34% 27%;
 
     --radius: 0.5rem;
   }
 
   .dark {
-    /* Keep existing dark theme values */
+    /* Dark Theme Design System Colors */
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
 
