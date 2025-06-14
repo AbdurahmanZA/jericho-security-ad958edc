@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Phone, Settings, Save, Copy, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
+import { Phone, Settings, Save, Copy, CheckCircle, XCircle, Info } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ExtensionManager } from './sip/ExtensionManager';
 import { SipLogs } from './sip/SipLogs';
@@ -193,13 +193,13 @@ export const SipSettings: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-4">
+            <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
               <div className="flex items-start space-x-2">
-                <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                <Info className="w-5 h-5 text-blue-600 mt-0.5" />
                 <div>
-                  <h5 className="font-semibold text-yellow-800 dark:text-yellow-200">G729 Codec License</h5>
-                  <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-                    G729 codec requires licensing for commercial use. This configuration is for testing purposes.
+                  <h5 className="font-semibold text-blue-800 dark:text-blue-200">G729 Open Source Codec</h5>
+                  <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                    Using open source G729 codec implementation. No licensing fees required for this configuration.
                   </p>
                 </div>
               </div>
