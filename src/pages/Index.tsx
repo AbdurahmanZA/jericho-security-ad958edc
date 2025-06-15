@@ -98,9 +98,6 @@ const Index = () => {
       }
     };
 
-    // Attach to window for use below
-    (window as any).addDebugLog = addDebugLog;
-
     connectWebSocket();
 
     // Load saved configuration
@@ -116,7 +113,7 @@ const Index = () => {
         wsRef.current.close();
       }
     };
-  }, [toast]);
+  }, [toast, addDebugLog]);
 
   // Save configuration whenever layout or fullscreen changes
   useEffect(() => {
