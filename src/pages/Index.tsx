@@ -81,6 +81,32 @@ const Index = () => {
     }
   };
 
+  const downloadLogsToFile = () => {
+    if (!debugLogs.length) {
+      toast({
+        title: "No Logs",
+        description: "There are no stream logs to download.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const blob = new Blob([debugLogs.join('\n')], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'jericho-logs.txt';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    }, 0);
+    toast({
+      title: "Logs Downloaded",
+      description: "RTSP stream logs downloaded as jericho-logs.txt",
+    });
+  };
+
   useEffect(() => {
     // Initialize WebSocket connection with minimal logging
     const connectWebSocket = () => {
@@ -520,6 +546,18 @@ const Index = () => {
                 >
                   <Copy className="w-4 h-4 mr-2" />
                   Copy Stream Logs
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={downloadLogsToFile}
+                  disabled={debugLogs.length === 0}
+                >
+                  {/* lucide-react only allows the `download` icon */}
+                  <svg className="w-4 h-4 mr-2" stroke="currentColor" fill="none" strokeWidth="2" viewBox="0 0 24 24">
+                    <path d="M12 3v12m0 0 4-4m-4 4-4-4m8 9H8a2 2 0 0 1-2-2V17m12 2V17a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v2"></path>
+                  </svg>
+                  Download Logs
                 </Button>
                 <Button
                   variant="outline"
