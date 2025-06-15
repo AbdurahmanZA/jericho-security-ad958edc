@@ -1,4 +1,3 @@
-
 // JERICHO Security System Backend Server (copied from install script)
 
 const express = require('express');
@@ -10,6 +9,7 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const sqlite3 = require('sqlite3').verbose();
 const { v4: uuidv4 } = require('uuid');
+const AsteriskManager = require('./asterisk-manager');
 
 const app = express();
 const server = http.createServer(app);
@@ -46,6 +46,9 @@ db.serialize(() => {
     FOREIGN KEY(camera_id) REFERENCES cameras(id)
   )`);
 });
+
+// Initialize Asterisk Manager
+const asteriskManager = new AsteriskManager(db);
 
 // Middleware
 app.use(cors());
@@ -453,6 +456,194 @@ app.post('/api/cameras/:id/snapshot', (req, res) => {
       res.json({ success: false, message: 'Snapshot failed' });
     }
   });
+});
+
+// =================== ASTERISK/SIP API ENDPOINTS ===================
+
+// Get SIP configuration
+app.get('/api/sip/config', async (req, res) => {
+  try {
+    const config = await asteriskManager.getSipConfig();
+    res.json(config);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update SIP configuration
+app.put('/api/sip/config', async (req, res) => {
+  try {
+    const config = await asteriskManager.updateSipConfig(req.body);
+    res.json(config);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all SIP extensions
+app.get('/api/sip/extensions', async (req, res) => {
+  try {
+    const extensions = await asteriskManager.getExtensions();
+    res.json(extensions);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create new SIP extension
+app.post('/api/sip/extensions', async (req, res) => {
+  try {
+    const extension = await asteriskManager.createExtension(req.body);
+    
+    // Reload Asterisk if it's running
+    if (req.body.reloadAsterisk !== false) {
+      try {
+        await asteriskManager.reloadAsterisk();
+      } catch (reloadError) {
+        console.warn('Could not reload Asterisk:', reloadError.message);
+      }
+    }
+    
+    broadcast({
+      type: 'sip_extension_created',
+      extension: extension,
+      timestamp: new Date().toISOString()
+    });
+    
+    res.json(extension);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update SIP extension
+app.put('/api/sip/extensions/:id', async (req, res) => {
+  try {
+    const extension = await asteriskManager.updateExtension(req.params.id, req.body);
+    
+    // Reload Asterisk if it's running
+    if (req.body.reloadAsterisk !== false) {
+      try {
+        await asteriskManager.reloadAsterisk();
+      } catch (reloadError) {
+        console.warn('Could not reload Asterisk:', reloadError.message);
+      }
+    }
+    
+    broadcast({
+      type: 'sip_extension_updated',
+      extension: extension,
+      timestamp: new Date().toISOString()
+    });
+    
+    res.json(extension);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete SIP extension
+app.delete('/api/sip/extensions/:id', async (req, res) => {
+  try {
+    const result = await asteriskManager.deleteExtension(req.params.id);
+    
+    // Reload Asterisk if it's running
+    try {
+      await asteriskManager.reloadAsterisk();
+    } catch (reloadError) {
+      console.warn('Could not reload Asterisk:', reloadError.message);
+    }
+    
+    broadcast({
+      type: 'sip_extension_deleted',
+      extensionId: req.params.id,
+      timestamp: new Date().toISOString()
+    });
+    
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Start Asterisk
+app.post('/api/sip/start', async (req, res) => {
+  try {
+    const result = await asteriskManager.startAsterisk();
+    
+    broadcast({
+      type: 'asterisk_status',
+      status: 'started',
+      timestamp: new Date().toISOString()
+    });
+    
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Stop Asterisk
+app.post('/api/sip/stop', async (req, res) => {
+  try {
+    const result = await asteriskManager.stopAsterisk();
+    
+    broadcast({
+      type: 'asterisk_status',
+      status: 'stopped',
+      timestamp: new Date().toISOString()
+    });
+    
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get Asterisk status
+app.get('/api/sip/status', async (req, res) => {
+  try {
+    const status = await asteriskManager.getAsteriskStatus();
+    res.json(status);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reload Asterisk configuration
+app.post('/api/sip/reload', async (req, res) => {
+  try {
+    const result = await asteriskManager.reloadAsterisk();
+    
+    broadcast({
+      type: 'asterisk_reloaded',
+      timestamp: new Date().toISOString()
+    });
+    
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get SIP peers (registered extensions)
+app.get('/api/sip/peers', async (req, res) => {
+  try {
+    const peers = await asteriskManager.getSipPeers();
+    res.json(peers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Generate Asterisk configuration files
+app.post('/api/sip/generate-config', async (req, res) => {
+  try {
+    const configs = await asteriskManager.generateAsteriskConfig();
+    res.json(configs);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Enhanced logging function

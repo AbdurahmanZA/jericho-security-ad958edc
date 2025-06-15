@@ -1,11 +1,11 @@
 
 export const linuxScript = `#!/bin/bash
-# JERICHO Security System - Ubuntu 24.04 Complete Installation Script (with HTTPS/FFmpeg)
-# Includes frontend, backend server, RTSP processing modules, and HTTPS support
+# JERICHO Security System - Ubuntu 24.04 Complete Installation Script (with HTTPS/FFmpeg/Asterisk)
+# Includes frontend, backend server, RTSP processing modules, HTTPS support, and Asterisk VoIP
 
 set -e
 
-echo "Installing JERICHO Security System with Backend Server..."
+echo "Installing JERICHO Security System with Backend Server and Asterisk VoIP..."
 
 # Update system and install base dependencies
 sudo apt update && sudo apt upgrade -y
@@ -26,6 +26,21 @@ echo "npm version: \$(npm --version)"
 
 # Install FFmpeg (latest from apt repository)
 sudo apt install -y ffmpeg
+
+# Install Asterisk and VoIP dependencies
+echo "Installing Asterisk with G.729 codec..."
+sudo apt install -y asterisk asterisk-modules asterisk-config asterisk-dev build-essential
+
+# Install G.729 codec (open source version)
+echo "Setting up G.729 codec..."
+cd /tmp
+wget -q http://asterisk.hosting.lv/src/asterisk-g729-1.5.0-x86_64.tar.bz2 || echo "G.729 download may fail - continuing without it"
+if [ -f asterisk-g729-1.5.0-x86_64.tar.bz2 ]; then
+  tar -xjf asterisk-g729-1.5.0-x86_64.tar.bz2
+  sudo cp asterisk-g729-1.5.0-x86_64/codec_g729.so /usr/lib/asterisk/modules/ 2>/dev/null || echo "G.729 codec installation skipped"
+  sudo chown asterisk:asterisk /usr/lib/asterisk/modules/codec_g729.so 2>/dev/null || true
+  sudo chmod 755 /usr/lib/asterisk/modules/codec_g729.so 2>/dev/null || true
+fi
 
 # Install OpenCV dependencies for motion detection
 sudo apt install -y python3-opencv libopencv-dev python3-numpy
@@ -78,6 +93,41 @@ echo "Installing backend dependencies..."
 cd /opt/jericho-backend
 sudo npm install
 
+# Configure Asterisk
+echo "Configuring Asterisk..."
+sudo systemctl stop asterisk 2>/dev/null || true
+
+# Create backup of original configs
+sudo cp /etc/asterisk/sip.conf /etc/asterisk/sip.conf.backup 2>/dev/null || true
+sudo cp /etc/asterisk/extensions.conf /etc/asterisk/extensions.conf.backup 2>/dev/null || true
+
+# Set proper permissions for Asterisk
+sudo chown -R asterisk:asterisk /etc/asterisk/
+sudo chmod -R 644 /etc/asterisk/*.conf
+sudo chmod 755 /etc/asterisk/
+
+# Add www-data to asterisk group for backend management
+sudo usermod -a -G asterisk www-data
+
+# Configure sudo permissions for backend Asterisk management
+sudo tee /etc/sudoers.d/jericho-asterisk > /dev/null << 'EOSUDO'
+# Allow www-data to manage Asterisk for JERICHO
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl start asterisk
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl stop asterisk
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart asterisk
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl status asterisk
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl is-active asterisk
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/asterisk -rx *
+EOSUDO
+
+# Configure firewall for SIP and RTP
+sudo ufw allow 5060/udp comment "SIP"
+sudo ufw allow 5060/tcp comment "SIP"
+sudo ufw allow 10000:20000/udp comment "RTP"
+
+# Enable Asterisk service (but don't start it - backend will manage it)
+sudo systemctl enable asterisk
+
 # (Re-)Create systemd service for backend
 sudo tee /etc/systemd/system/jericho-backend.service > /dev/null << 'EOF'
 [Unit]
@@ -102,15 +152,13 @@ APACHE_SSL_CONF="/etc/apache2/sites-available/jericho-ssl.conf"
 DOMAIN="jericho.local"
 
 if [ -n "\$DOMAIN" ]; then
-  echo "Attempting to set up HTTPS for \$DOMAIN using Let's Encrypt (certbot)..."
-  sudo certbot --apache --non-interactive --agree-tos -m youremail@example.com -d \$DOMAIN || true
-  # Fallback if certbot fails or you don't have a public domain:
+  echo "Setting up HTTPS configuration..."
   if [ ! -f /etc/ssl/certs/jericho-selfsigned.crt ]; then
-    echo "Certbot failed or no valid domain, generating self-signed certificate for Apache..."
+    echo "Generating self-signed certificate for Apache..."
     sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\
       -keyout /etc/ssl/private/jericho-selfsigned.key \\
       -out /etc/ssl/certs/jericho-selfsigned.crt \\
-      -subj "/C=US/ST=Denial/L=Springfield/O=Dis/CN=jericho.local"
+      -subj "/C=ZA/ST=Gauteng/L=Johannesburg/O=JERICHO/CN=jericho.local"
   fi
 
   sudo tee \$APACHE_SSL_CONF > /dev/null <<'EOSSLCONF'
@@ -154,7 +202,7 @@ sudo systemctl start jericho-backend
 sudo a2enmod ssl
 sudo systemctl restart apache2
 
-# Configure firewall for HTTP and HTTPS
+# Configure firewall for HTTP, HTTPS, and backend
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 sudo ufw allow 3001/tcp
@@ -171,11 +219,23 @@ echo "WebSocket: ws://localhost:3001"
 echo "\\n📊 Check service status:"
 echo "sudo systemctl status jericho-backend"
 echo "sudo systemctl status apache2"
-echo "\\n📁 Backend logs:"
-echo "sudo journalctl -u jericho-backend -f"
-echo "\\n🔧 Backend directory: /opt/jericho-backend"
+echo "sudo systemctl status asterisk"
+echo "\\n📁 Backend directory: /opt/jericho-backend"
+echo "📁 Asterisk configs: /etc/asterisk/"
+echo "\\n📋 VoIP Setup:"
+echo "1. Go to Settings > SIP/VoIP in web interface"
+echo "2. Configure SIP settings and create extensions"
+echo "3. Start Asterisk from the web interface"
+echo "4. Test SIP registration with softphone"
+echo "\\n🔧 Useful commands:"
+echo "Backend logs: sudo journalctl -u jericho-backend -f"
+echo "Asterisk status: sudo systemctl status asterisk"
+echo "Asterisk CLI: sudo asterisk -r"
+echo "SIP peers: sudo asterisk -rx 'sip show peers'"
 echo "=================================="
 
-echo "\\n🟢 HTTPS ACCESS: If you set up a DNS record to point to your server, replace 'jericho.local' with your domain and reissue the cert (see comments in script)."
-echo "\\n🔄 Certbot auto-renew is set up by default via cron; self-signed certs will need periodic renewal by rerunning openssl commands above if desired."
+echo "\\n🟢 HTTPS ACCESS: If you have a domain pointing to this server, update the DOMAIN variable in this script and rerun."
+echo "\\n🔄 VoIP is configured with G.729 codec support for efficient bandwidth usage."
 `
+
+```
