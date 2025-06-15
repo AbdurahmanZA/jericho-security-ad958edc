@@ -112,14 +112,18 @@ const Index = () => {
     const connectWebSocket = () => {
       const currentAttempt = connectionAttempts + 1;
       setConnectionAttempts(currentAttempt);
-      
+
       try {
         if (currentAttempt === 1) {
           addDebugLog('Attempting to connect to WebSocket server for live monitoring', 'CONNECTION');
         }
-        // CHANGED: Use server's IP as WebSocket host
-        wsRef.current = new WebSocket('ws://192.168.0.138:3001');
-        
+        // Automatically select ws:// or wss:// depending on frontend protocol
+        const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsHost = "192.168.0.138:3001";  // You can change the IP if needed
+        const wsUrl = `${wsProtocol}//${wsHost}`;
+
+        wsRef.current = new WebSocket(wsUrl);
+
         wsRef.current.onopen = () => {
           addDebugLog('Live monitoring connection established', 'CONNECTION');
           setConnectionAttempts(0);
@@ -128,7 +132,7 @@ const Index = () => {
             description: "Real-time monitoring active",
           });
         };
-        
+
         wsRef.current.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
@@ -156,7 +160,7 @@ const Index = () => {
             addDebugLog(`Failed to parse server message: ${parseError}`, 'ERROR');
           }
         };
-        
+
         wsRef.current.onclose = (event) => {
           if (currentAttempt === 1) {
             addDebugLog('Live monitoring disconnected (no backend server available)', 'CONNECTION');
@@ -169,7 +173,7 @@ const Index = () => {
             addDebugLog('Stopped attempting WebSocket reconnection. This is normal without a backend server.', 'CONNECTION');
           }
         };
-        
+
         wsRef.current.onerror = () => {
           // Only log the first error to avoid spam
           if (currentAttempt === 1) {
