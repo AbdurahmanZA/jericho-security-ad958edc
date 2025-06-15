@@ -19,6 +19,11 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { Link } from 'react-router-dom';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger, DrawerDescription } from "@/components/ui/drawer";
 import { AlertTriangle, List as ListIcon } from "lucide-react";
+import SystemStatusBox from "@/components/SystemStatusBox";
+import CameraLayoutControls from "@/components/CameraLayoutControls";
+import QuickActions from "@/components/QuickActions";
+import StreamLogsDrawer from "@/components/StreamLogsDrawer";
+import BackendLogsDrawer from "@/components/BackendLogsDrawer";
 
 const Index = () => {
   const [layout, setLayout] = useState(4);
@@ -341,106 +346,18 @@ const Index = () => {
             </SidebarHeader>
             
             <SidebarContent className="p-4 jericho-primary-bg">
-              {/* System Status */}
-              <div className="mb-6 p-4 jericho-secondary-bg rounded-lg border border-jericho-light/20">
-                <h3 className="text-sm font-bold mb-3 text-jericho-very-light uppercase tracking-wider">
-                  System Status
-                </h3>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between items-center">
-                    <span className="text-jericho-light">Uptime:</span>
-                    <span className="text-green-400 font-semibold">{systemStatus.uptime}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-jericho-light">Active Streams:</span>
-                    <span className="text-blue-400 font-semibold">{systemStatus.activeStreams}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-jericho-light">Motion Events:</span>
-                    <span className="text-jericho-accent font-semibold">{systemStatus.totalEvents}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-jericho-light">Hikvision:</span>
-                    <span className="text-purple-400 font-semibold">{systemStatus.hikvisionConnections}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Layout Controls */}
-              <div className="mb-6">
-                <h3 className="text-sm font-bold mb-3 text-jericho-very-light uppercase tracking-wider">
-                  Camera Layout
-                </h3>
-                <div className="grid grid-cols-3 gap-2">
-                  {[1, 2, 4, 6, 9, 12].map((num) => (
-                    <Button
-                      key={num}
-                      variant={layout === num ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => handleLayoutChange(num)}
-                      className={`text-xs font-semibold ${
-                        layout === num 
-                          ? 'jericho-btn-accent text-jericho-primary' 
-                          : 'jericho-btn-primary border-jericho-light/30 text-white hover:jericho-accent-bg hover:text-jericho-primary'
-                      }`}
-                    >
-                      {num}
-                    </Button>
-                  ))}
-                </div>
-                <Button
-                  variant={isFullscreen ? "default" : "outline"}
-                  size="sm"
-                  onClick={toggleFullscreen}
-                  className={`w-full mt-3 text-xs font-semibold ${
-                    isFullscreen 
-                      ? 'jericho-btn-accent text-jericho-primary' 
-                      : 'jericho-btn-primary border-jericho-light/30 text-white hover:jericho-accent-bg hover:text-jericho-primary'
-                  }`}
-                >
-                  <Monitor className="w-3 h-3 mr-2" />
-                  4×3 VIEW
-                </Button>
-              </div>
-
-              {/* Quick Actions */}
-              <div className="mb-6">
-                <h3 className="text-sm font-bold mb-3 text-jericho-very-light uppercase tracking-wider">
-                  Quick Actions
-                </h3>
-                <div className="space-y-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowSnapshots(true)}
-                    className="w-full justify-start text-xs font-semibold jericho-btn-primary border-jericho-light/30 text-white hover:jericho-accent-bg hover:text-jericho-primary"
-                  >
-                    <Image className="w-3 h-3 mr-2" />
-                    VIEW SNAPSHOTS
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowHikvisionSetup(true)}
-                    className="w-full justify-start text-xs font-semibold jericho-btn-primary border-jericho-light/30 text-white hover:jericho-accent-bg hover:text-jericho-primary"
-                  >
-                    <Settings className="w-3 h-3 mr-2" />
-                    HIKVISION SETUP
-                  </Button>
-                  <Link to="/settings">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full justify-start text-xs font-semibold jericho-btn-primary border-jericho-light/30 text-white hover:jericho-accent-bg hover:text-jericho-primary"
-                    >
-                      <Settings className="w-3 h-3 mr-2" />
-                      SYSTEM SETTINGS
-                    </Button>
-                  </Link>
-                </div>
-              </div>
-
-              {/* Motion Log */}
+              <SystemStatusBox systemStatus={systemStatus} />
+              <CameraLayoutControls
+                layout={layout}
+                isFullscreen={isFullscreen}
+                onLayoutChange={handleLayoutChange}
+                onToggleFullscreen={toggleFullscreen}
+              />
+              <QuickActions
+                onShowSnapshots={() => setShowSnapshots(true)}
+                onShowHikvisionSetup={() => setShowHikvisionSetup(true)}
+                onShowSettings={() => {}} // optional: handle direct settings
+              />
               <MotionLog events={motionEvents} />
             </SidebarContent>
           </Sidebar>
@@ -554,141 +471,42 @@ const Index = () => {
         </div>
 
         {/* Stream Logs Drawer */}
-        <Drawer open={showLogDrawer} onOpenChange={setShowLogDrawer}>
-          <DrawerContent>
-            <DrawerHeader>
-              <DrawerTitle>
-                <Video className="inline w-5 h-5 mr-2" />
-                RTSP Stream Logs ({debugLogs.length})
-              </DrawerTitle>
-              <DrawerDescription>
-                Real-time logs for camera streams, connections, and errors. Focused on RTSP stream events.
-              </DrawerDescription>
-              <div className="flex items-center space-x-2 mt-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={copyLogsToClipboard}
-                  disabled={debugLogs.length === 0}
-                >
-                  <Copy className="w-4 h-4 mr-2" />
-                  Copy Stream Logs
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={downloadLogsToFile}
-                  disabled={debugLogs.length === 0}
-                >
-                  {/* lucide-react only allows the `download` icon */}
-                  <svg className="w-4 h-4 mr-2" stroke="currentColor" fill="none" strokeWidth="2" viewBox="0 0 24 24">
-                    <path d="M12 3v12m0 0 4-4m-4 4-4-4m8 9H8a2 2 0 0 1-2-2V17m12 2V17a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v2"></path>
-                  </svg>
-                  Download Logs
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setDebugLogs([])}
-                  disabled={debugLogs.length === 0}
-                >
-                  Clear Logs
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  Active streams: {systemStatus.activeStreams}
-                </span>
-              </div>
-            </DrawerHeader>
-            <div className="max-h-96 overflow-y-auto px-4 pb-4">
-              {debugLogs.length === 0 ? (
-                <div className="text-center text-muted-foreground py-6">
-                  <Video className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="font-medium">No stream logs yet</p>
-                  <p className="text-xs mt-1">RTSP stream events and camera errors will appear here.</p>
-                </div>
-              ) : (
-                <pre className="text-xs font-mono bg-muted/50 rounded px-3 py-2 whitespace-pre-wrap break-words select-all cursor-text min-h-64">
-{debugLogs.join('\n')}
-                </pre>
-              )}
-            </div>
-          </DrawerContent>
-        </Drawer>
+        <StreamLogsDrawer
+          open={showLogDrawer}
+          onOpenChange={setShowLogDrawer}
+          logs={debugLogs}
+          onCopy={copyLogsToClipboard}
+          onDownload={downloadLogsToFile}
+          onClear={() => setDebugLogs([])}
+          activeStreams={systemStatus.activeStreams}
+        />
 
         {/* Backend Logs Drawer */}
-        <Drawer open={showBackendLogDrawer} onOpenChange={setShowBackendLogDrawer}>
-          <DrawerContent>
-            <DrawerHeader>
-              <DrawerTitle>
-                <Video className="inline w-5 h-5 mr-2" />
-                Backend Server Logs ({backendLogs.length})
-              </DrawerTitle>
-              <DrawerDescription>
-                System events and service messages from the backend server (mock/sample data—replace with live backend integration).
-              </DrawerDescription>
-              <div className="flex items-center space-x-2 mt-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={async () => {
-                    if (backendLogs.length) {
-                      await navigator.clipboard.writeText(backendLogs.join('\n'));
-                    }
-                  }}
-                  disabled={backendLogs.length === 0}
-                >
-                  <Copy className="w-4 h-4 mr-2" />
-                  Copy Backend Logs
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (!backendLogs.length) return;
-                    const blob = new Blob([backendLogs.join('\n')], { type: 'text/plain' });
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'backend-logs.txt';
-                    document.body.appendChild(a);
-                    a.click();
-                    setTimeout(() => {
-                      document.body.removeChild(a);
-                      window.URL.revokeObjectURL(url);
-                    }, 0);
-                  }}
-                  disabled={backendLogs.length === 0}
-                >
-                  <svg className="w-4 h-4 mr-2" stroke="currentColor" fill="none" strokeWidth="2" viewBox="0 0 24 24">
-                    <path d="M12 3v12m0 0 4-4m-4 4-4-4m8 9H8a2 2 0 0 1-2-2V17m12 2V17a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v2"></path>
-                  </svg>
-                  Download Logs
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setBackendLogs([])}
-                  disabled={backendLogs.length === 0}
-                >
-                  Clear Logs
-                </Button>
-              </div>
-            </DrawerHeader>
-            <div className="max-h-96 overflow-y-auto px-4 pb-4">
-              {backendLogs.length === 0 ? (
-                <div className="text-center text-muted-foreground py-6">
-                  <Video className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="font-medium">No backend logs yet</p>
-                  <p className="text-xs mt-1">Backend server/system events will appear here.</p>
-                </div>
-              ) : (
-                <pre className="text-xs font-mono bg-muted/50 rounded px-3 py-2 whitespace-pre-wrap break-words select-all cursor-text min-h-64">
-{backendLogs.join('\n')}
-                </pre>
-              )}
-            </div>
-          </DrawerContent>
-        </Drawer>
+        <BackendLogsDrawer
+          open={showBackendLogDrawer}
+          onOpenChange={setShowBackendLogDrawer}
+          logs={backendLogs}
+          onCopy={async () => {
+            if (backendLogs.length) {
+              await navigator.clipboard.writeText(backendLogs.join('\n'));
+            }
+          }}
+          onDownload={() => {
+            if (!backendLogs.length) return;
+            const blob = new Blob([backendLogs.join('\n')], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'backend-logs.txt';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+              document.body.removeChild(a);
+              window.URL.revokeObjectURL(url);
+            }, 0);
+          }}
+          onClear={() => setBackendLogs([])}
+        />
 
         {/* Modals */}
         <SnapshotGallery 
