@@ -67,35 +67,36 @@ EOF
 sudo tee /etc/apache2/sites-available/000-default.conf > /dev/null <<'EOF'
 <VirtualHost *:80>
     DocumentRoot /var/www/html
-    ServerName localhost
-    
+    ServerName jericho-security
+    ServerAlias 192.168.0.138
+
     # Enable required modules
     RewriteEngine On
-    
+
     <Directory /var/www/html>
         AllowOverride All
         Require all granted
         Options Indexes FollowSymLinks
-        
+
         # Ensure proper MIME types
         AddType text/css .css
         AddType application/javascript .js
         AddType application/json .json
-        
+
         # SPA fallback
         FallbackResource /index.html
     </Directory>
-    
+
     # Handle assets directory specifically
     <Directory /var/www/html/assets>
         Options -Indexes
         AllowOverride None
         Require all granted
-        
+
         # Disable fallback for assets
         RewriteEngine Off
     </Directory>
-    
+
     # Error and access logs
     ErrorLog \${APACHE_LOG_DIR}/error.log
     CustomLog \${APACHE_LOG_DIR}/access.log combined
