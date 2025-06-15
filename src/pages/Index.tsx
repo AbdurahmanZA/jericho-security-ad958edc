@@ -42,6 +42,11 @@ const Index = () => {
   const TOTAL_CAMERAS = 32; // We'll support up to 32 cameras with pagination
   const totalPages = Math.ceil(TOTAL_CAMERAS / layout);
 
+  // Move addDebugLog to the component top-level so it's accessible everywhere in Index
+  const addDebugLog = (msg: string) => {
+    setDebugLogs(prev => [msg, ...prev].slice(0, 100));
+  };
+
   useEffect(() => {
     // Initialize WebSocket connection
     const connectWebSocket = () => {
@@ -91,11 +96,6 @@ const Index = () => {
         addDebugLog(msg);
         setTimeout(connectWebSocket, 5000);
       }
-    };
-
-    // Debug log helper:
-    const addDebugLog = (msg: string) => {
-      setDebugLogs(prev => [msg, ...prev].slice(0, 100));
     };
 
     // Attach to window for use below
