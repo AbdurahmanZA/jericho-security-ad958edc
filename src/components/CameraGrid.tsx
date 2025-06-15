@@ -9,9 +9,10 @@ interface CameraGridProps {
   isFullscreen: boolean;
   onSnapshot: (cameraId: number) => void;
   currentPage?: number;
+  onLog?: (msg: string) => void;
 }
 
-export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, onSnapshot, currentPage = 1 }) => {
+export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, onSnapshot, currentPage = 1, onLog }) => {
   const [cameraUrls, setCameraUrls] = useState<Record<number, string>>({});
   const [cameraNames, setCameraNames] = useState<Record<number, string>>({});
   const [activeStreams, setActiveStreams] = useState<Record<number, boolean>>({});
@@ -268,7 +269,11 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
               playsInline
               src={`/hls/camera${cameraId}/stream.m3u8`}
               onError={() => {
-                console.error(`Video error for camera ${cameraId}`);
+                const errMsg = `Video error for camera ${cameraId} at ${new Date().toLocaleTimeString()}`;
+                console.error(errMsg);
+                if (onLog) {
+                  onLog(errMsg);
+                }
                 setActiveStreams(prev => ({ ...prev, [cameraId]: false }));
               }}
             >

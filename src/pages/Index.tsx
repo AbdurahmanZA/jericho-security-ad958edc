@@ -17,6 +17,8 @@ import { MultipleCameraSetup } from '@/components/MultipleCameraSetup';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Link } from 'react-router-dom';
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger, DrawerDescription } from "@/components/ui/drawer";
+import { AlertTriangle, List as ListIcon } from "lucide-react";
 
 const Index = () => {
   const [layout, setLayout] = useState(4);
@@ -34,6 +36,8 @@ const Index = () => {
   });
   const wsRef = useRef(null);
   const { toast } = useToast();
+  const [showLogDrawer, setShowLogDrawer] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
 
   const TOTAL_CAMERAS = 32; // We'll support up to 32 cameras with pagination
   const totalPages = Math.ceil(TOTAL_CAMERAS / layout);
@@ -70,18 +74,32 @@ const Index = () => {
         };
         
         wsRef.current.onclose = () => {
-          console.log('WebSocket disconnected, attempting to reconnect...');
+          const msg = `[${new Date().toLocaleTimeString()}] WebSocket disconnected, attempting to reconnect...`;
+          console.log(msg);
+          addDebugLog(msg);
           setTimeout(connectWebSocket, 5000);
         };
         
         wsRef.current.onerror = (error) => {
-          console.error('WebSocket error:', error);
+          const errMsg = `[${new Date().toLocaleTimeString()}] WebSocket error: ${JSON.stringify(error)}`;
+          console.error(errMsg);
+          addDebugLog(errMsg);
         };
       } catch (error) {
-        console.error('Failed to connect WebSocket:', error);
+        const msg = `[${new Date().toLocaleTimeString()}] Failed to connect WebSocket: ${error}`;
+        console.error(msg);
+        addDebugLog(msg);
         setTimeout(connectWebSocket, 5000);
       }
     };
+
+    // Debug log helper:
+    const addDebugLog = (msg: string) => {
+      setDebugLogs(prev => [msg, ...prev].slice(0, 100));
+    };
+
+    // Attach to window for use below
+    (window as any).addDebugLog = addDebugLog;
 
     connectWebSocket();
 
@@ -357,6 +375,15 @@ const Index = () => {
                 >
                   Refresh Streams
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowLogDrawer(true)}
+                  className="jericho-btn-primary border-jericho-light/30 text-white hover:jericho-accent-bg hover:text-jericho-primary font-semibold text-xs uppercase tracking-wide"
+                >
+                  <ListIcon className="w-4 h-4 mr-2" />
+                  Debug Logs
+                </Button>
                 <ThemeToggle />
               </div>
             </header>
@@ -368,6 +395,7 @@ const Index = () => {
                   isFullscreen={isFullscreen}
                   onSnapshot={captureSnapshot}
                   currentPage={currentPage}
+                  onLog={addDebugLog}
                 />
               </div>
               {!isFullscreen && totalPages > 1 && (
@@ -401,6 +429,37 @@ const Index = () => {
           </SidebarInset>
         </div>
 
+        {/* Log Drawer */}
+        <Drawer open={showLogDrawer} onOpenChange={setShowLogDrawer}>
+          <DrawerContent>
+            <DrawerHeader>
+              <DrawerTitle>
+                <ListIcon className="inline w-5 h-5 mr-2" />
+                Debug Logs
+              </DrawerTitle>
+              <DrawerDescription>
+                Most recent RTSP, video, and socket errors for troubleshooting.
+              </DrawerDescription>
+            </DrawerHeader>
+            <div className="max-h-96 overflow-y-auto px-4 pb-4">
+              {debugLogs.length === 0 ? (
+                <div className="text-center text-muted-foreground py-6">
+                  <AlertTriangle className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="font-medium">No debug logs yet</p>
+                  <p className="text-xs mt-1">Stream and socket errors will appear here.</p>
+                </div>
+              ) : (
+                <ul className="space-y-2">
+                  {debugLogs.map((log, idx) => (
+                    <li key={idx} className="text-xs font-mono bg-muted/50 rounded px-3 py-2">
+                      {log}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </DrawerContent>
+        </Drawer>
         {/* Modals */}
         <SnapshotGallery 
           open={showSnapshots} 
