@@ -39,6 +39,19 @@ const Index = () => {
   const [showLogDrawer, setShowLogDrawer] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
+  const [showBackendLogDrawer, setShowBackendLogDrawer] = useState(false);
+  const [backendLogs, setBackendLogs] = useState<string[]>([
+    // These are sample backend logs. Replace with API/frontend logic as needed.
+    "[2025-06-15 17:41:11] [INFO] Server booting up...",
+    "[2025-06-15 17:41:13] [SYSTEM] Initiated RTSP relay worker pool",
+    "[2025-06-15 17:41:14] [FFMPEG] FFMPEG v6.1.1 detected",
+    "[2025-06-15 17:41:15] [HTTP] Started on 0.0.0.0:3001",
+    "[2025-06-15 17:41:20] [AUTH] Key verified for camera endpoint",
+    "[2025-06-15 17:41:22] [STREAM] Camera 1 stream started",
+    "[2025-06-15 17:42:01] [SYSTEM] Certbot auto-renewal check complete",
+    "[2025-06-15 17:42:10] [STREAM] Camera 2 stream error: Connection timeout",
+    "[2025-06-15 17:43:44] [SYSTEM] Garbage collection completed for stale streams"
+  ]);
 
   const TOTAL_CAMERAS = 32; // We'll support up to 32 cameras with pagination
   const totalPages = Math.ceil(TOTAL_CAMERAS / layout);
@@ -486,6 +499,15 @@ const Index = () => {
                   <ListIcon className="w-4 h-4 mr-2" />
                   Stream Logs
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowBackendLogDrawer(true)}
+                  className="jericho-btn-primary border-jericho-light/30 text-white hover:jericho-accent-bg hover:text-jericho-primary font-semibold text-xs uppercase tracking-wide"
+                >
+                  <ListIcon className="w-4 h-4 mr-2" />
+                  Backend Logs
+                </Button>
                 <ThemeToggle />
               </div>
             </header>
@@ -585,17 +607,89 @@ const Index = () => {
                   <p className="text-xs mt-1">RTSP stream events and camera errors will appear here.</p>
                 </div>
               ) : (
-                <ul className="space-y-2">
-                  {debugLogs.map((log, idx) => (
-                    <li key={idx} className="text-xs font-mono bg-muted/50 rounded px-3 py-2 break-all">
-                      {log}
-                    </li>
-                  ))}
-                </ul>
+                <pre className="text-xs font-mono bg-muted/50 rounded px-3 py-2 whitespace-pre-wrap break-words select-all cursor-text min-h-64">
+{debugLogs.join('\n')}
+                </pre>
               )}
             </div>
           </DrawerContent>
         </Drawer>
+
+        {/* Backend Logs Drawer */}
+        <Drawer open={showBackendLogDrawer} onOpenChange={setShowBackendLogDrawer}>
+          <DrawerContent>
+            <DrawerHeader>
+              <DrawerTitle>
+                <Video className="inline w-5 h-5 mr-2" />
+                Backend Server Logs ({backendLogs.length})
+              </DrawerTitle>
+              <DrawerDescription>
+                System events and service messages from the backend server (mock/sample data—replace with live backend integration).
+              </DrawerDescription>
+              <div className="flex items-center space-x-2 mt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    if (backendLogs.length) {
+                      await navigator.clipboard.writeText(backendLogs.join('\n'));
+                    }
+                  }}
+                  disabled={backendLogs.length === 0}
+                >
+                  <Copy className="w-4 h-4 mr-2" />
+                  Copy Backend Logs
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (!backendLogs.length) return;
+                    const blob = new Blob([backendLogs.join('\n')], { type: 'text/plain' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'backend-logs.txt';
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(() => {
+                      document.body.removeChild(a);
+                      window.URL.revokeObjectURL(url);
+                    }, 0);
+                  }}
+                  disabled={backendLogs.length === 0}
+                >
+                  <svg className="w-4 h-4 mr-2" stroke="currentColor" fill="none" strokeWidth="2" viewBox="0 0 24 24">
+                    <path d="M12 3v12m0 0 4-4m-4 4-4-4m8 9H8a2 2 0 0 1-2-2V17m12 2V17a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v2"></path>
+                  </svg>
+                  Download Logs
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBackendLogs([])}
+                  disabled={backendLogs.length === 0}
+                >
+                  Clear Logs
+                </Button>
+              </div>
+            </DrawerHeader>
+            <div className="max-h-96 overflow-y-auto px-4 pb-4">
+              {backendLogs.length === 0 ? (
+                <div className="text-center text-muted-foreground py-6">
+                  <Video className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="font-medium">No backend logs yet</p>
+                  <p className="text-xs mt-1">Backend server/system events will appear here.</p>
+                </div>
+              ) : (
+                <pre className="text-xs font-mono bg-muted/50 rounded px-3 py-2 whitespace-pre-wrap break-words select-all cursor-text min-h-64">
+{backendLogs.join('\n')}
+                </pre>
+              )}
+            </div>
+          </DrawerContent>
+        </Drawer>
+
         {/* Modals */}
         <SnapshotGallery 
           open={showSnapshots} 
