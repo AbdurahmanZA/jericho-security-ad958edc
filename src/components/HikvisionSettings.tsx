@@ -43,6 +43,7 @@ interface CloudDevice {
 export const HikvisionSettings: React.FC = () => {
   const [cameras, setCameras] = useState<HikvisionCamera[]>([]);
   const [cloudAccounts, setCloudAccounts] = useState<CloudAccount[]>([]);
+  const [apiCredentials, setApiCredentials] = useState({ appKey: '', appSecret: '' });
   const [editingCamera, setEditingCamera] = useState<HikvisionCamera | null>(null);
   const [editingAccount, setEditingAccount] = useState<CloudAccount | null>(null);
   const [loading, setLoading] = useState(false);
@@ -60,6 +61,7 @@ export const HikvisionSettings: React.FC = () => {
   useEffect(() => {
     loadCameras();
     loadCloudAccounts();
+    loadApiCredentials();
   }, []);
 
   const loadCameras = () => {
@@ -76,6 +78,13 @@ export const HikvisionSettings: React.FC = () => {
     }
   };
 
+  const loadApiCredentials = () => {
+    const savedCreds = localStorage.getItem('jericho-hikvision-api-creds');
+    if (savedCreds) {
+      setApiCredentials(JSON.parse(savedCreds));
+    }
+  };
+
   const saveCameras = (updatedCameras: HikvisionCamera[]) => {
     setCameras(updatedCameras);
     localStorage.setItem('jericho-hikvision-cameras', JSON.stringify(updatedCameras));
@@ -84,6 +93,14 @@ export const HikvisionSettings: React.FC = () => {
   const saveCloudAccounts = (updatedAccounts: CloudAccount[]) => {
     setCloudAccounts(updatedAccounts);
     localStorage.setItem('jericho-cloud-accounts', JSON.stringify(updatedAccounts));
+  };
+
+  const saveApiCredentials = () => {
+    localStorage.setItem('jericho-hikvision-api-creds', JSON.stringify(apiCredentials));
+    toast({
+      title: "API Credentials Saved",
+      description: "Hikvision API credentials have been updated.",
+    });
   };
 
   const createNewCamera = (type: 'rtsp' | 'ezviz' | 'hikconnect' = 'rtsp') => {
@@ -138,9 +155,23 @@ export const HikvisionSettings: React.FC = () => {
   const saveCloudAccount = async () => {
     if (!editingAccount) return;
 
+    if (editingAccount.type === 'hikconnect' && (!apiCredentials.appKey || !apiCredentials.appSecret)) {
+      toast({
+        title: "API Credentials Required",
+        description: "Please set your Hikvision AppKey and AppSecret before adding a Hik-Connect account.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
     try {
       // Simulate API call to connect to cloud service
+      console.log("Attempting to connect with:", { 
+        type: editingAccount.type,
+        username: editingAccount.username,
+        appKey: apiCredentials.appKey 
+      });
       await new Promise(resolve => setTimeout(resolve, 2000));
       
       // Mock devices for demonstration
@@ -389,6 +420,42 @@ export const HikvisionSettings: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="cloud" className="space-y-6">
+          <div className="p-6 border border-border rounded-lg bg-card shadow-sm">
+            <h4 className="font-semibold uppercase tracking-wide mb-2">API Configuration</h4>
+            <p className="text-sm text-muted-foreground mb-4">
+              Enter the AppKey and AppSecret provided by Hikvision for cloud service integration. These are required to connect to Hik-Connect accounts.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="appKey">AppKey</Label>
+                <Input
+                  id="appKey"
+                  value={apiCredentials.appKey}
+                  onChange={(e) => setApiCredentials(prev => ({ ...prev, appKey: e.target.value }))}
+                  placeholder="Enter your Hikvision AppKey"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="appSecret">AppSecret</Label>
+                <Input
+                  id="appSecret"
+                  type="password"
+                  value={apiCredentials.appSecret}
+                  onChange={(e) => setApiCredentials(prev => ({ ...prev, appSecret: e.target.value }))}
+                  placeholder="Enter your Hikvision AppSecret"
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end mt-4">
+              <Button onClick={saveApiCredentials} size="sm" className="jericho-btn-primary">
+                <Save className="w-4 h-4 mr-2" />
+                Save Credentials
+              </Button>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between">
             <h4 className="font-semibold uppercase tracking-wide">Cloud Account Integration</h4>
             <div className="flex space-x-2">
