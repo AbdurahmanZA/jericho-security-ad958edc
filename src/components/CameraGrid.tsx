@@ -49,7 +49,8 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     // Initialize WebSocket for RTSP stream control
     let ws: WebSocket;
     function connectWebSocket() {
-      ws = new WebSocket("ws://localhost:3001");
+      // CHANGED: Use the same IP as frontend access
+      ws = new WebSocket("ws://192.168.0.138:3001");
       ws.onopen = () => {
         if (onLog) onLog("CameraGrid connected to backend WebSocket for stream control.");
       };

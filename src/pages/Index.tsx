@@ -117,7 +117,8 @@ const Index = () => {
         if (currentAttempt === 1) {
           addDebugLog('Attempting to connect to WebSocket server for live monitoring', 'CONNECTION');
         }
-        wsRef.current = new WebSocket('ws://localhost:3001');
+        // CHANGED: Use server's IP as WebSocket host
+        wsRef.current = new WebSocket('ws://192.168.0.138:3001');
         
         wsRef.current.onopen = () => {
           addDebugLog('Live monitoring connection established', 'CONNECTION');
