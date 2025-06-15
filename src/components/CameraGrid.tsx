@@ -513,6 +513,37 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     setTempName('');
   };
 
+  // --- New useEffect for HLS player setup/teardown per camera ---
+  useEffect(() => {
+    // For all cameras to show:
+    const cameraIds = Array.from({ length: isFullscreen ? 12 : layout }, (_, i) =>
+      ((currentPage - 1) * (isFullscreen ? 12 : layout)) + 1 + i
+    );
+
+    cameraIds.forEach((cameraId) => {
+      const isActive = activeStreams[cameraId];
+      const videoEl = videoRefs.current[cameraId];
+
+      // If the stream is active and video element is present, setup once
+      if (isActive && videoEl && !hlsInstancesRef.current[cameraId]) {
+        setupHLSPlayer(cameraId, videoEl);
+      }
+      // If the stream is not active, cleanup
+      if ((!isActive || !videoEl) && hlsInstancesRef.current[cameraId]) {
+        cleanupHLSPlayer(cameraId);
+      }
+    });
+
+    // On cleanup, if any streams deactivated or components unmounted, cleanup all HLS players shown on this grid page
+    return () => {
+      cameraIds.forEach((cameraId) => {
+        cleanupHLSPlayer(cameraId);
+      });
+    };
+    // Only rerun when the relevant camera's activity status or ref changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStreams, layout, isFullscreen, currentPage]);
+
   const renderCamera = (cameraId: number) => {
     const isActive = activeStreams[cameraId];
     const url = cameraUrls[cameraId];
@@ -651,12 +682,6 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
             <video
               ref={(el) => {
                 videoRefs.current[cameraId] = el;
-                if (el && isActive) {
-                  // Small delay to ensure DOM is ready
-                  setTimeout(() => {
-                    setupHLSPlayer(cameraId, el);
-                  }, 500);
-                }
               }}
               className="w-full h-full object-cover bg-black"
               autoPlay
