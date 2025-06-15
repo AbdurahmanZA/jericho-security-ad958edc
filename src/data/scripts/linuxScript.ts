@@ -38,6 +38,10 @@ sudo tee /var/www/html/.htaccess > /dev/null <<'EOF'
 # Enable rewrite engine
 RewriteEngine On
 
+# Do not rewrite requests for the assets directory
+RewriteCond %{REQUEST_URI} ^/assets/ [NC]
+RewriteRule .* - [L]
+
 # Handle Angular and React Router - send everything to index.html
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
