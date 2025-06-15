@@ -1,3 +1,4 @@
+
 // JERICHO Security System Backend Server (copied from install script)
 
 const express = require('express');
@@ -56,6 +57,160 @@ app.use('/snapshots', express.static(SNAPSHOTS_DIR));
 const activeStreams = new Map();
 const connectedClients = new Set();
 
+// Stream type detection and configuration
+function detectStreamType(rtspUrl) {
+  const url = rtspUrl.toLowerCase();
+  
+  if (url.includes('hikvision') || url.includes('hik') || 
+      url.includes('/streaming/channels/') || url.includes('hikivision')) {
+    return 'hikvision';
+  }
+  if (url.includes('dahua') || url.includes('/cam/realmonitor')) {
+    return 'dahua';
+  }
+  if (url.includes('axis') || url.includes('/axis-media/')) {
+    return 'axis';
+  }
+  if (url.includes('reolink') || url.includes('/h264preview_')) {
+    return 'reolink';
+  }
+  if (url.includes('amcrest') || url.includes('/cam/realmonitor')) {
+    return 'amcrest';
+  }
+  if (url.includes('ubiquiti') || url.includes('unifi')) {
+    return 'ubiquiti';
+  }
+  
+  return 'generic';
+}
+
+function getFFmpegParams(streamType, rtspUrl, outputPath) {
+  const baseParams = [
+    '-rtsp_transport', 'tcp',
+    '-i', rtspUrl,
+    '-c:v', 'libx264',
+    '-c:a', 'aac',
+    '-f', 'hls',
+    '-preset', 'ultrafast',
+    '-tune', 'zerolatency'
+  ];
+
+  let specificParams = [];
+
+  switch (streamType) {
+    case 'hikvision':
+      specificParams = [
+        '-hls_time', '4',
+        '-hls_list_size', '6',
+        '-hls_flags', 'delete_segments+omit_endlist',
+        '-s', '960x576',
+        '-r', '12',
+        '-b:v', '600k',
+        '-maxrate', '800k',
+        '-bufsize', '1600k',
+        '-g', '24',
+        '-async', '1',
+        '-vsync', '1',
+        '-avoid_negative_ts', 'make_zero',
+        '-fflags', '+genpts+discardcorrupt',
+        '-analyzeduration', '2000000',
+        '-probesize', '2000000'
+      ];
+      break;
+
+    case 'dahua':
+      specificParams = [
+        '-hls_time', '3',
+        '-hls_list_size', '5',
+        '-hls_flags', 'delete_segments+omit_endlist',
+        '-s', '1280x720',
+        '-r', '15',
+        '-b:v', '800k',
+        '-maxrate', '1000k',
+        '-bufsize', '2000k',
+        '-g', '30',
+        '-async', '1',
+        '-vsync', '1',
+        '-avoid_negative_ts', 'make_zero'
+      ];
+      break;
+
+    case 'axis':
+      specificParams = [
+        '-hls_time', '2',
+        '-hls_list_size', '4',
+        '-hls_flags', 'delete_segments+omit_endlist',
+        '-s', '1920x1080',
+        '-r', '20',
+        '-b:v', '1200k',
+        '-maxrate', '1500k',
+        '-bufsize', '3000k',
+        '-g', '40'
+      ];
+      break;
+
+    case 'reolink':
+      specificParams = [
+        '-hls_time', '3',
+        '-hls_list_size', '5',
+        '-hls_flags', 'delete_segments+omit_endlist',
+        '-s', '1920x1080',
+        '-r', '15',
+        '-b:v', '1000k',
+        '-maxrate', '1200k',
+        '-bufsize', '2400k',
+        '-g', '30',
+        '-async', '1'
+      ];
+      break;
+
+    case 'amcrest':
+      specificParams = [
+        '-hls_time', '4',
+        '-hls_list_size', '5',
+        '-hls_flags', 'delete_segments+omit_endlist',
+        '-s', '1280x720',
+        '-r', '15',
+        '-b:v', '700k',
+        '-maxrate', '900k',
+        '-bufsize', '1800k',
+        '-g', '30'
+      ];
+      break;
+
+    case 'ubiquiti':
+      specificParams = [
+        '-hls_time', '2',
+        '-hls_list_size', '4',
+        '-hls_flags', 'delete_segments+omit_endlist',
+        '-s', '1920x1080',
+        '-r', '30',
+        '-b:v', '1500k',
+        '-maxrate', '2000k',
+        '-bufsize', '4000k',
+        '-g', '60'
+      ];
+      break;
+
+    default: // generic
+      specificParams = [
+        '-hls_time', '3',
+        '-hls_list_size', '5',
+        '-hls_flags', 'delete_segments+omit_endlist',
+        '-s', '1280x720',
+        '-r', '15',
+        '-b:v', '800k',
+        '-maxrate', '1000k',
+        '-bufsize', '2000k',
+        '-g', '30',
+        '-async', '1',
+        '-vsync', '1'
+      ];
+  }
+
+  return [...baseParams, ...specificParams, outputPath];
+}
+
 // WebSocket connection handling
 wss.on('connection', (ws) => {
   console.log('Client connected to WebSocket');
@@ -111,43 +266,23 @@ function startRTSPStream(cameraId, rtspUrl) {
     return;
   }
 
-  console.log(`Starting RTSP stream for camera ${cameraId}: ${rtspUrl}`);
+  const streamType = detectStreamType(rtspUrl);
+  console.log(`Starting RTSP stream for camera ${cameraId} (${streamType}): ${rtspUrl}`);
 
   const outputPath = path.join(HLS_DIR, `camera_${cameraId}.m3u8`);
+  const ffmpegParams = getFFmpegParams(streamType, rtspUrl, outputPath);
 
-  // Updated FFmpeg parameters optimized for Hikvision cameras
-  const ffmpeg = spawn('ffmpeg', [
-    '-rtsp_transport', 'tcp',  // Use TCP for more stable connection
-    '-i', rtspUrl,
-    '-c:v', 'libx264',
-    '-c:a', 'aac',
-    '-f', 'hls',
-    '-hls_time', '4',          // Increased segment time for better stability
-    '-hls_list_size', '5',     // Keep more segments
-    '-hls_flags', 'delete_segments+omit_endlist',
-    '-preset', 'ultrafast',
-    '-tune', 'zerolatency',
-    '-s', '960x576',           // Match your camera's native resolution
-    '-r', '12',                // Match your camera's native framerate
-    '-b:v', '500k',            // Set reasonable bitrate
-    '-maxrate', '600k',
-    '-bufsize', '1200k',
-    '-g', '24',                // GOP size = 2 * framerate
-    '-async', '1',             // Audio sync
-    '-vsync', '1',             // Video sync to handle timestamp issues
-    '-avoid_negative_ts', 'make_zero',  // Fix timestamp issues
-    '-fflags', '+genpts',      // Generate presentation timestamps
-    outputPath
-  ]);
+  const ffmpeg = spawn('ffmpeg', ffmpegParams);
 
   ffmpeg.on('spawn', () => {
-    console.log(`FFmpeg process started for camera ${cameraId}`);
+    console.log(`FFmpeg process started for camera ${cameraId} with ${streamType} optimizations`);
     activeStreams.set(cameraId, ffmpeg);
 
     broadcast({
       type: 'stream_status',
       cameraId: cameraId,
       status: 'started',
+      streamType: streamType,
       hlsUrl: `/hls/camera_${cameraId}.m3u8`,
       timestamp: new Date().toISOString()
     });
@@ -181,7 +316,7 @@ function startRTSPStream(cameraId, rtspUrl) {
     const output = data.toString();
     // Log important FFmpeg output for debugging
     if (output.includes('Stream mapping') || output.includes('Input #0') || output.includes('fps=')) {
-      console.log(`FFmpeg info for camera ${cameraId}:`, output.trim());
+      console.log(`FFmpeg info for camera ${cameraId} (${streamType}):`, output.trim());
     }
     if (output.includes('error') || output.includes('Error') || output.includes('failed')) {
       console.error(`FFmpeg stderr for camera ${cameraId}:`, output);
