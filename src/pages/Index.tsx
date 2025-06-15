@@ -71,7 +71,7 @@ const Index = () => {
 
   const fetchBackendLogs = async () => {
     try {
-      const response = await fetch('http://192.168.0.138:3001/api/logs');
+      const response = await fetch('/api/logs');
       if (response.ok) {
         const logs = await response.json();
         setBackendLogs(logs);
@@ -83,7 +83,7 @@ const Index = () => {
 
   const fetchSystemStatus = async () => {
     try {
-      const response = await fetch('http://192.168.0.138:3001/api/status');
+      const response = await fetch('/api/status');
       if (response.ok) {
         const status = await response.json();
         setSystemStatus(prev => ({
@@ -209,9 +209,10 @@ const Index = () => {
           addBackendLog('[CONNECTION] Attempting WebSocket connection to backend server');
         }
         
+        // Use current domain and protocol for WebSocket connection
         const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const wsHost = "192.168.0.138:3001";
-        const wsUrl = `${wsProtocol}//${wsHost}`;
+        const wsHost = window.location.host;
+        const wsUrl = `${wsProtocol}//${wsHost}/ws/`;
 
         wsRef.current = new WebSocket(wsUrl);
 

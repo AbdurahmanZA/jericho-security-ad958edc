@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -75,10 +76,10 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     // Initialize WebSocket for RTSP stream control
     let ws: WebSocket;
     function connectWebSocket() {
-      // Use the same protocol as the frontend is loaded with
+      // Use current domain and protocol for WebSocket connection
       const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsHost = "192.168.0.138:3001"; // You can change the IP if needed
-      const wsUrl = `${wsProtocol}//${wsHost}`;
+      const wsHost = window.location.host;
+      const wsUrl = `${wsProtocol}//${wsHost}/ws/`;
 
       ws = new WebSocket(wsUrl);
       ws.onopen = () => {
