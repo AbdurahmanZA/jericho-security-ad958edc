@@ -1,4 +1,3 @@
-
 export const installationScripts = {
   linux: `#!/bin/bash
 # JERICHO Security System - Ubuntu Installation Script
@@ -97,7 +96,7 @@ sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<EOF
     ServerAdmin admin@localhost
     DocumentRoot /var/www/html
     
-    # MIME type configuration - must be set globally
+    # Global MIME type configuration - CRITICAL for proper asset serving
     AddType text/css .css
     AddType application/javascript .js
     AddType application/json .json
@@ -105,27 +104,29 @@ sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<EOF
     AddType font/woff .woff
     AddType font/woff2 .woff2
     
-    # Main directory configuration
-    <Directory "/var/www/html">
-        Options -Indexes +FollowSymLinks
-        AllowOverride All
+    # Explicit assets directory - serve static files ONLY
+    <Directory "/var/www/html/assets">
+        Options -Indexes -FollowSymLinks
+        AllowOverride None
         Require all granted
         
-        # Serve static files directly - no rewrite for existing files
-        RewriteEngine On
+        # DISABLE rewrite engine completely for assets
+        RewriteEngine Off
         
-        # Don't rewrite files that exist (including assets)
-        RewriteCond %{REQUEST_FILENAME} !-f
-        RewriteCond %{REQUEST_FILENAME} !-d
+        # Force MIME types - this is the key fix
+        <FilesMatch "\\.css$">
+            ForceType text/css
+            Header set Content-Type "text/css"
+        </FilesMatch>
+        <FilesMatch "\\.js$">
+            ForceType application/javascript
+            Header set Content-Type "application/javascript"
+        </FilesMatch>
+        <FilesMatch "\\.(png|jpg|jpeg|gif|ico|svg)$">
+            ForceType image/svg+xml
+        </FilesMatch>
         
-        # Don't rewrite asset files specifically
-        RewriteCond %{REQUEST_URI} !^/assets/
-        RewriteCond %{REQUEST_URI} !\\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|json)$
-        
-        # Only rewrite to index.html for non-existing files that aren't assets
-        RewriteRule . /index.html [L]
-        
-        # Cache control for static assets
+        # Cache control for performance
         <FilesMatch "\\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2)$">
             ExpiresActive On
             ExpiresDefault "access plus 1 month"
@@ -133,22 +134,30 @@ sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<EOF
         </FilesMatch>
     </Directory>
     
-    # Explicit assets directory configuration
-    <Directory "/var/www/html/assets">
+    # Main directory for HTML and React Router
+    <Directory "/var/www/html">
         Options -Indexes +FollowSymLinks
-        AllowOverride None
+        AllowOverride All
         Require all granted
         
-        # Disable rewrite engine for assets directory
-        RewriteEngine Off
+        # React Router rewrite rules - EXCLUDE assets completely
+        RewriteEngine On
         
-        # Force correct MIME types
-        <FilesMatch "\\.css$">
-            ForceType text/css
-        </FilesMatch>
-        <FilesMatch "\\.js$">
-            ForceType application/javascript
-        </FilesMatch>
+        # Skip rewrite for existing files and directories
+        RewriteCond %{REQUEST_FILENAME} -f [OR]
+        RewriteCond %{REQUEST_FILENAME} -d
+        RewriteRule ^ - [L]
+        
+        # Skip rewrite for assets directory entirely
+        RewriteCond %{REQUEST_URI} ^/assets/
+        RewriteRule ^ - [L]
+        
+        # Skip rewrite for static file extensions
+        RewriteCond %{REQUEST_URI} \\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|json|txt)$
+        RewriteRule ^ - [L]
+        
+        # Only rewrite remaining requests to index.html
+        RewriteRule ^ /index.html [L]
     </Directory>
     
     # Security headers
@@ -158,6 +167,9 @@ sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<EOF
     
     ErrorLog \${APACHE_LOG_DIR}/jericho_error.log
     CustomLog \${APACHE_LOG_DIR}/jericho_access.log combined
+    
+    # Enable logging for debugging
+    LogLevel info rewrite:trace3
 </VirtualHost>
 EOF
 
