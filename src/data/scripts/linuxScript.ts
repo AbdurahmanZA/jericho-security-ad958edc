@@ -150,3 +150,4 @@ sudo systemctl restart apache2
 echo "Installation complete! Access at http://localhost"
 echo "Apache configured with proper MIME types and asset handling"
 echo "Check Apache error logs if issues persist: sudo tail -f /var/log/apache2/error.log"
+`
