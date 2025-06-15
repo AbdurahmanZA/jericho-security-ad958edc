@@ -299,6 +299,9 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
       delete retryTimeoutsRef.current[cameraId];
     }
 
+    // Clean up HLS player first
+    cleanupHLSPlayer(cameraId);
+
     updateCameraState(cameraId, {
       connectionStatus: 'idle',
       retryCount: 0,
@@ -323,6 +326,9 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
       delete retryTimeoutsRef.current[cameraId];
     }
 
+    // Clean up HLS player
+    cleanupHLSPlayer(cameraId);
+
     // Reset state
     updateCameraState(cameraId, {
       retryCount: 0,
@@ -338,6 +344,147 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     toast({
       title: "Camera Reset",
       description: `Camera ${cameraId} has been reset and can be restarted manually`,
+    });
+  };
+
+  const setupHLSPlayer = (cameraId: number, videoElement: HTMLVideoElement) => {
+    if (!videoElement) {
+      if (onLog) onLog(`No video element found for Camera ${cameraId}`);
+      return;
+    }
+
+    // Clean up existing HLS instance
+    cleanupHLSPlayer(cameraId);
+
+    const hlsUrl = `/hls/camera_${cameraId}.m3u8`;
+    
+    if (onLog) onLog(`Setting up HLS player for Camera ${cameraId} with URL: ${hlsUrl}`);
+
+    if (Hls.isSupported()) {
+      if (onLog) onLog(`HLS.js is supported, creating new instance for Camera ${cameraId}`);
+      
+      const hls = new Hls({
+        enableWorker: false,
+        lowLatencyMode: true,
+        backBufferLength: 90,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        startLevel: -1,
+        capLevelToPlayerSize: true,
+        debug: false,
+      });
+
+      hlsInstancesRef.current[cameraId] = hls;
+
+      hls.loadSource(hlsUrl);
+      hls.attachMedia(videoElement);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (onLog) onLog(`HLS manifest parsed for Camera ${cameraId}, attempting autoplay`);
+        updateCameraState(cameraId, { hlsAvailable: true });
+        
+        videoElement.play().then(() => {
+          if (onLog) onLog(`Video playback started for Camera ${cameraId}`);
+        }).catch(error => {
+          if (onLog) onLog(`Autoplay failed for Camera ${cameraId}: ${error.message}`);
+        });
+      });
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (onLog) onLog(`HLS error for Camera ${cameraId}: ${data.type} - ${data.details} - Fatal: ${data.fatal}`);
+        
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              if (onLog) onLog(`Network error for Camera ${cameraId}, retrying...`);
+              setTimeout(() => {
+                if (hlsInstancesRef.current[cameraId]) {
+                  hlsInstancesRef.current[cameraId].startLoad();
+                }
+              }, 1000);
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              if (onLog) onLog(`Media error for Camera ${cameraId}, trying to recover...`);
+              setTimeout(() => {
+                if (hlsInstancesRef.current[cameraId]) {
+                  hlsInstancesRef.current[cameraId].recoverMediaError();
+                }
+              }, 1000);
+              break;
+            default:
+              if (onLog) onLog(`Fatal error for Camera ${cameraId}, destroying player`);
+              cleanupHLSPlayer(cameraId);
+              updateCameraState(cameraId, { 
+                hlsAvailable: false, 
+                lastError: `HLS Fatal Error: ${data.details}` 
+              });
+              break;
+          }
+        }
+      });
+
+      hls.on(Hls.Events.FRAG_LOADED, () => {
+        if (onLog) onLog(`HLS fragment loaded for Camera ${cameraId}`);
+      });
+
+    } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari native HLS support
+      if (onLog) onLog(`Using Safari native HLS support for Camera ${cameraId}`);
+      videoElement.src = hlsUrl;
+      
+      videoElement.addEventListener('loadedmetadata', () => {
+        if (onLog) onLog(`Safari HLS metadata loaded for Camera ${cameraId}`);
+        updateCameraState(cameraId, { hlsAvailable: true });
+        
+        videoElement.play().then(() => {
+          if (onLog) onLog(`Safari video playback started for Camera ${cameraId}`);
+        }).catch(error => {
+          if (onLog) onLog(`Safari autoplay failed for Camera ${cameraId}: ${error.message}`);
+        });
+      });
+    } else {
+      if (onLog) onLog(`HLS not supported for Camera ${cameraId}`);
+      updateCameraState(cameraId, { 
+        hlsAvailable: false, 
+        lastError: 'HLS not supported by browser' 
+      });
+    }
+  };
+
+  const cleanupHLSPlayer = (cameraId: number) => {
+    if (hlsInstancesRef.current[cameraId]) {
+      if (onLog) onLog(`Cleaning up HLS player for Camera ${cameraId}`);
+      hlsInstancesRef.current[cameraId].destroy();
+      delete hlsInstancesRef.current[cameraId];
+    }
+  };
+
+  const handleVideoError = (cameraId: number, error: any) => {
+    const videoElement = videoRefs.current[cameraId];
+    if (onLog) {
+      onLog(`Video element error for Camera ${cameraId}: ${error.type} - Code: ${error.target?.error?.code}`);
+    }
+    
+    updateCameraState(cameraId, {
+      lastError: `Video error: ${error.target?.error?.code || 'Unknown'}`,
+    });
+
+    // Try to recover by recreating the HLS player
+    if (activeStreams[cameraId] && videoElement) {
+      if (onLog) onLog(`Attempting to recover video for Camera ${cameraId}`);
+      setTimeout(() => {
+        setupHLSPlayer(cameraId, videoElement);
+      }, 2000);
+    }
+  };
+
+  const handleVideoCanPlay = (cameraId: number) => {
+    if (onLog) {
+      onLog(`Video element can play for Camera ${cameraId}`);
+    }
+    updateCameraState(cameraId, {
+      hlsAvailable: true,
+      lastError: ''
     });
   };
 
@@ -364,103 +511,6 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     }
     setEditingName(null);
     setTempName('');
-  };
-
-  const handleVideoError = (cameraId: number, error: any) => {
-    const videoElement = videoRefs.current[cameraId];
-    if (onLog) {
-      onLog(`Video element error for Camera ${cameraId}: ${error.type} - Code: ${error.target?.error?.code}`);
-    }
-    
-    // Check if HLS file exists when video fails
-    checkHLSAvailability(cameraId);
-    
-    updateCameraState(cameraId, {
-      lastError: `Video error: ${error.target?.error?.code || 'Unknown'}`,
-      hlsAvailable: false
-    });
-  };
-
-  const handleVideoCanPlay = (cameraId: number) => {
-    if (onLog) {
-      onLog(`Video element can play for Camera ${cameraId}`);
-    }
-    updateCameraState(cameraId, {
-      hlsAvailable: true,
-      lastError: ''
-    });
-  };
-
-  const setupHLSPlayer = (cameraId: number, videoElement: HTMLVideoElement) => {
-    if (!videoElement) return;
-
-    // Clean up existing HLS instance
-    if (hlsInstancesRef.current[cameraId]) {
-      hlsInstancesRef.current[cameraId].destroy();
-      delete hlsInstancesRef.current[cameraId];
-    }
-
-    const hlsUrl = `/hls/camera_${cameraId}.m3u8`;
-
-    if (Hls.isSupported()) {
-      const hls = new Hls({
-        enableWorker: false,
-        lowLatencyMode: true,
-        backBufferLength: 90
-      });
-
-      hlsInstancesRef.current[cameraId] = hls;
-
-      hls.loadSource(hlsUrl);
-      hls.attachMedia(videoElement);
-
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        if (onLog) onLog(`HLS manifest loaded for Camera ${cameraId}`);
-        videoElement.play().catch(error => {
-          if (onLog) onLog(`Autoplay failed for Camera ${cameraId}: ${error.message}`);
-        });
-      });
-
-      hls.on(Hls.Events.ERROR, (event, data) => {
-        if (onLog) onLog(`HLS error for Camera ${cameraId}: ${data.type} - ${data.details}`);
-        
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              if (onLog) onLog(`Network error for Camera ${cameraId}, retrying...`);
-              hls.startLoad();
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              if (onLog) onLog(`Media error for Camera ${cameraId}, trying to recover...`);
-              hls.recoverMediaError();
-              break;
-            default:
-              if (onLog) onLog(`Fatal error for Camera ${cameraId}, destroying player`);
-              hls.destroy();
-              delete hlsInstancesRef.current[cameraId];
-              break;
-          }
-        }
-      });
-
-    } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari native HLS support
-      videoElement.src = hlsUrl;
-      videoElement.addEventListener('loadedmetadata', () => {
-        videoElement.play().catch(error => {
-          if (onLog) onLog(`Safari autoplay failed for Camera ${cameraId}: ${error.message}`);
-        });
-      });
-    } else {
-      if (onLog) onLog(`HLS not supported for Camera ${cameraId}`);
-    }
-  };
-
-  const cleanupHLSPlayer = (cameraId: number) => {
-    if (hlsInstancesRef.current[cameraId]) {
-      hlsInstancesRef.current[cameraId].destroy();
-      delete hlsInstancesRef.current[cameraId];
-    }
   };
 
   const renderCamera = (cameraId: number) => {
@@ -565,10 +615,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  stopStream(cameraId);
-                  cleanupHLSPlayer(cameraId);
-                }}
+                onClick={() => stopStream(cameraId)}
                 className="h-6 w-6 p-0"
               >
                 <Square className="w-3 h-3" />
@@ -605,10 +652,13 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
               ref={(el) => {
                 videoRefs.current[cameraId] = el;
                 if (el && isActive) {
-                  setupHLSPlayer(cameraId, el);
+                  // Small delay to ensure DOM is ready
+                  setTimeout(() => {
+                    setupHLSPlayer(cameraId, el);
+                  }, 500);
                 }
               }}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover bg-black"
               autoPlay
               muted
               playsInline
@@ -620,6 +670,12 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
               }}
               onLoadedData={() => {
                 if (onLog) onLog(`Video data loaded for Camera ${cameraId}`);
+              }}
+              onWaiting={() => {
+                if (onLog) onLog(`Video waiting for data for Camera ${cameraId}`);
+              }}
+              onPlaying={() => {
+                if (onLog) onLog(`Video playing for Camera ${cameraId}`);
               }}
             >
               Your browser does not support HLS video playback.
