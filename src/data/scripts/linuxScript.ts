@@ -1,50 +1,33 @@
 
 export const linuxScript = `#!/bin/bash
-# JERICHO Security System - Ubuntu Installation Script
+# JERICHO Security System - Linux Installation Script
 set -e
 
-echo "Starting JERICHO Security System installation..."
+echo "Installing JERICHO Security System..."
 
-# Check if running as root
-if [[ $EUID -eq 0 ]]; then
-   echo "This script should not be run as root. Please run as a regular user with sudo privileges."
-   exit 1
-fi
+# Update system packages
+sudo apt update
+sudo apt upgrade -y
 
-# Update system and install prerequisites
-echo "Installing prerequisites..."
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y curl git apache2 nodejs npm unzip
+# Install required packages
+sudo apt install -y curl git apache2 nodejs npm
 
-# Check Node.js version (requires 16+)
-NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-if [ "$NODE_VERSION" -lt 16 ]; then
-    echo "Installing Node.js 18 LTS..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-    sudo apt-get install -y nodejs
-fi
-
-# Clean up any previous installations
-echo "Cleaning up previous installations..."
-sudo systemctl stop apache2
-sudo rm -rf /var/www/html/*
-
-# Create temporary directory for installation
+# Create temporary directory
 TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
-# Download and extract the application
+# Clone from GitHub repository
 echo "Downloading JERICHO Security System..."
 REPO_URL="https://github.com/AbdurahmanZA/jericho-security-ad958edc.git"
 
-# Try to clone the repository
 if git clone "$REPO_URL" jericho-security-system; then
     echo "Repository cloned successfully"
 else
     echo "Failed to clone repository. Please ensure:"
-    echo "1. The repository URL is correct"
-    echo "2. You have access to the repository"
-    echo "3. Git credentials are configured if repository is private"
+    echo "1. You have access to the repository"
+    echo "2. Git credentials are configured if repository is private"
+    echo "3. Use: git config --global credential.helper store"
+    echo "4. Or setup SSH keys for GitHub access"
     exit 1
 fi
 
@@ -57,27 +40,90 @@ npm install
 echo "Building application..."
 npm run build
 
-# Deploy to Apache
-echo "Deploying to web server..."
-sudo cp -r dist/* /var/www/html/
-sudo chown -R www-data:www-data /var/www/html/
+# Stop Apache
+sudo systemctl stop apache2
 
-# Configure Apache
+# Clean and deploy
+sudo rm -rf /var/www/html/*
+sudo cp -r dist/* /var/www/html/
+
+# Create proper Apache configuration for SPA
+sudo tee /etc/apache2/sites-available/jericho-security.conf > /dev/null <<EOF
+<VirtualHost *:80>
+    DocumentRoot /var/www/html
+    ServerName localhost
+    
+    # Enable rewrite module for SPA routing
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^.*\$ /index.html [QSA,L]
+    
+    # Set proper MIME types
+    <LocationMatch "\\.(css|js|map|json|ico|svg|png|jpg|jpeg|gif|woff|woff2|ttf|eot)$">
+        Header always set Cache-Control "public, max-age=31536000"
+    </LocationMatch>
+    
+    # Security headers
+    Header always set X-Content-Type-Options nosniff
+    Header always set X-Frame-Options DENY
+    Header always set X-XSS-Protection "1; mode=block"
+    
+    # Enable compression
+    <IfModule mod_deflate.c>
+        AddOutputFilterByType DEFLATE text/plain
+        AddOutputFilterByType DEFLATE text/html
+        AddOutputFilterByType DEFLATE text/xml
+        AddOutputFilterByType DEFLATE text/css
+        AddOutputFilterByType DEFLATE application/xml
+        AddOutputFilterByType DEFLATE application/xhtml+xml
+        AddOutputFilterByType DEFLATE application/rss+xml
+        AddOutputFilterByType DEFLATE application/javascript
+        AddOutputFilterByType DEFLATE application/x-javascript
+    </IfModule>
+    
+    ErrorLog \${APACHE_LOG_DIR}/jericho-error.log
+    CustomLog \${APACHE_LOG_DIR}/jericho-access.log combined
+</VirtualHost>
+EOF
+
+# Enable required Apache modules
+sudo a2enmod rewrite
+sudo a2enmod headers
+sudo a2enmod deflate
+
+# Disable default site and enable Jericho site
+sudo a2dissite 000-default
+sudo a2ensite jericho-security
+
+# Set proper permissions
+sudo chown -R www-data:www-data /var/www/html
+sudo chmod -R 755 /var/www/html
+
+# Test Apache configuration
+sudo apache2ctl configtest
+
+# Start Apache
 sudo systemctl start apache2
 sudo systemctl enable apache2
 
-# Open firewall ports
-sudo ufw allow 80/tcp 2>/dev/null || true
-sudo ufw allow 443/tcp 2>/dev/null || true
+# Configure firewall
+sudo ufw allow 'Apache Full'
 
 # Cleanup
 cd /
 rm -rf "$TEMP_DIR"
 
-echo "Installation completed successfully!"
-echo "JERICHO Security System is available at: http://$(hostname -I | awk '{print $1}')"
-echo "Local access: http://localhost"
+echo "Installation complete!"
+echo "Access your JERICHO Security System at: http://localhost"
+echo "Or from network: http://\$(hostname -I | awk '{print \$1}')"
 echo ""
-echo "If you encountered authentication issues, you may need to:"
-echo "1. Configure Git credentials: git config --global user.name 'Your Name'"
-echo "2. Set up SSH keys or personal access tokens for private repositories"`;
+echo "If you see MIME type errors:"
+echo "1. Check that all files were copied: ls -la /var/www/html/"
+echo "2. Restart Apache: sudo systemctl restart apache2"
+echo "3. Check Apache error logs: sudo tail -f /var/log/apache2/jericho-error.log"
+echo ""
+echo "For authentication issues during git clone:"
+echo "- Use personal access token instead of password"
+echo "- Configure Git credentials: git config --global credential.helper store"
+echo "- Or setup SSH keys for seamless GitHub access"`;
