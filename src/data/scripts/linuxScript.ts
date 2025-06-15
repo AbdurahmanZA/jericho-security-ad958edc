@@ -7,18 +7,25 @@ set -e
 
 echo "Installing JERICHO Security System with Backend Server..."
 
-# Update system and install base dependencies (add universe for certbot on Ubuntu 24.04)
+# Update system and install base dependencies
 sudo apt update && sudo apt upgrade -y
-sudo add-apt-repository universe
-sudo apt install -y lsb-release ca-certificates apt-transport-https software-properties-common
+sudo add-apt-repository universe -y
+sudo apt install -y lsb-release ca-certificates apt-transport-https software-properties-common curl wget
 
-# Install FFmpeg (latest from apt repository; add PPA if you want absolute latest - optional)
+# Remove any existing Node.js installations to avoid conflicts
+sudo apt remove -y nodejs npm node-* 2>/dev/null || true
+sudo apt autoremove -y
+
+# Install Node.js 20 LTS using NodeSource repository (cleaner method)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Verify Node.js installation
+echo "Node.js version: \$(node --version)"
+echo "npm version: \$(npm --version)"
+
+# Install FFmpeg (latest from apt repository)
 sudo apt install -y ffmpeg
-
-# Optionally install latest FFmpeg (uncomment if newer needed)
-# sudo add-apt-repository ppa:savoury1/ffmpeg4 -y
-# sudo apt update
-# sudo apt install -y ffmpeg
 
 # Install OpenCV dependencies for motion detection
 sudo apt install -y python3-opencv libopencv-dev python3-numpy
@@ -26,16 +33,9 @@ sudo apt install -y python3-opencv libopencv-dev python3-numpy
 # Install additional media processing tools
 sudo apt install -y v4l-utils gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
 
-# Install Node.js 20 (latest LTS)
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs npm
-
 # Install Apache2, Git, Certbot (HTTPS)
-sudo apt install -y apache2 git curl wget build-essential python3 python3-pip certbot python3-certbot-apache
+sudo apt install -y apache2 git build-essential python3 python3-pip certbot python3-certbot-apache
 
-# Verify installations
-echo "Node.js version: \$(node --version)"
-echo "npm version: \$(npm --version)"
 echo "FFmpeg version: \$(ffmpeg -version | head -n1)"
 
 # Enable Apache modules (HTTP + HTTPS)
