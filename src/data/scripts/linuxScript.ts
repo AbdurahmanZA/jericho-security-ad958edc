@@ -28,24 +28,33 @@ fi
 echo "Cleaning up previous installations..."
 sudo systemctl stop apache2
 sudo rm -rf /var/www/html/*
-sudo npm uninstall -g jericho-security-system 2>/dev/null || true
-sudo rm -rf /usr/local/lib/node_modules/jericho-security-system 2>/dev/null || true
 
 # Create temporary directory for installation
 TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
-# Download and extract the latest release
+# Download and extract the application
 echo "Downloading JERICHO Security System..."
-# Replace with your actual GitHub repository URL
-REPO_URL="https://github.com/YOUR_USERNAME/jericho-security-system"
-git clone "$REPO_URL.git" jericho-security-system
+REPO_URL="https://github.com/AbdurahmanZA/jericho-security-ad958edc.git"
+
+# Try to clone the repository
+if git clone "$REPO_URL" jericho-security-system; then
+    echo "Repository cloned successfully"
+else
+    echo "Failed to clone repository. Please ensure:"
+    echo "1. The repository URL is correct"
+    echo "2. You have access to the repository"
+    echo "3. Git credentials are configured if repository is private"
+    exit 1
+fi
 
 cd jericho-security-system
 
 # Install dependencies and build
-echo "Building application..."
+echo "Installing dependencies..."
 npm install
+
+echo "Building application..."
 npm run build
 
 # Deploy to Apache
@@ -69,4 +78,6 @@ echo "Installation completed successfully!"
 echo "JERICHO Security System is available at: http://$(hostname -I | awk '{print $1}')"
 echo "Local access: http://localhost"
 echo ""
-echo "NOTE: Update the REPO_URL variable in this script with your actual GitHub repository URL"`;
+echo "If you encountered authentication issues, you may need to:"
+echo "1. Configure Git credentials: git config --global user.name 'Your Name'"
+echo "2. Set up SSH keys or personal access tokens for private repositories"`;

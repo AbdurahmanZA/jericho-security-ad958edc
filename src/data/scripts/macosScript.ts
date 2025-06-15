@@ -19,15 +19,26 @@ cd "$TEMP_DIR"
 
 # Download and extract from GitHub
 echo "Downloading JERICHO Security System..."
-# Replace with your actual GitHub repository URL
-REPO_URL="https://github.com/YOUR_USERNAME/jericho-security-system"
-git clone "$REPO_URL.git" jericho-security-system
+REPO_URL="https://github.com/AbdurahmanZA/jericho-security-ad958edc.git"
+
+# Try to clone the repository
+if git clone "$REPO_URL" jericho-security-system; then
+    echo "Repository cloned successfully"
+else
+    echo "Failed to clone repository. Please ensure:"
+    echo "1. The repository URL is correct"
+    echo "2. You have access to the repository"
+    echo "3. Git credentials are configured if repository is private"
+    exit 1
+fi
 
 cd jericho-security-system
 
 # Install dependencies and build
-echo "Building application..."
+echo "Installing dependencies..."
 npm install
+
+echo "Building application..."
 npm run build
 
 # Stop nginx
@@ -45,4 +56,7 @@ cd /
 rm -rf "$TEMP_DIR"
 
 echo "Installation complete! Access at http://localhost:8080"
-echo "NOTE: Update the REPO_URL variable in this script with your actual GitHub repository URL"`;
+echo ""
+echo "If you encountered authentication issues:"
+echo "- Configure Git credentials or SSH keys"
+echo "- Use personal access tokens for private repositories"`;

@@ -2,27 +2,28 @@
 export const scriptMetadata = {
   linux: {
     title: "Ubuntu/Debian Installation",
-    description: "Complete installation script that clones from GitHub, builds the application, and deploys to Apache.",
-    prerequisites: "Ubuntu 18.04+ with sudo privileges, internet connection",
+    description: "Complete installation script that clones from your GitHub repository, builds the application, and deploys to Apache.",
+    prerequisites: "Ubuntu 18.04+ with sudo privileges, internet connection, Git access to repository",
     usage: "Save as install.sh, make executable: chmod +x install.sh, then run: ./install.sh",
     features: [
       "Automatic dependency installation (Node.js, npm, Apache)",
-      "Git clone from repository with build process",
+      "Git clone from your repository with build process",
       "Automatic Apache configuration and deployment",
       "Firewall configuration for web ports",
-      "Clean installation with error handling"
+      "Clean installation with error handling",
+      "Authentication troubleshooting guidance"
     ]
   },
   windows: {
     title: "Windows Installation", 
-    description: "Windows batch script that clones from GitHub, builds, and deploys to IIS.",
-    prerequisites: "Git, Node.js, npm, IIS, Administrator privileges",
+    description: "Windows batch script that clones from your GitHub repository, builds, and deploys to IIS.",
+    prerequisites: "Git, Node.js, npm, IIS, Administrator privileges, Repository access",
     usage: "Save as install.bat and run as Administrator"
   },
   macos: {
     title: "macOS Installation",
-    description: "macOS installation script using Git clone, build process, and nginx deployment.",
-    prerequisites: "Xcode Command Line Tools, internet connection",
+    description: "macOS installation script using Git clone from your repository, build process, and nginx deployment.",
+    prerequisites: "Xcode Command Line Tools, internet connection, Repository access",
     usage: "Save as install.sh, make executable with chmod +x install.sh, then run ./install.sh"
   },
   docker: {
