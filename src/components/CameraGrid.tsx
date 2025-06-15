@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +17,7 @@ interface CameraState {
   lastError: string;
   connectionStatus: 'idle' | 'connecting' | 'connected' | 'failed';
   lastAttempt: number;
+  hlsAvailable: boolean;
 }
 
 export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, onSnapshot, currentPage = 1, onLog }) => {
@@ -32,6 +32,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   const { toast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
   const retryTimeoutsRef = useRef<Record<number, NodeJS.Timeout>>({});
+  const videoRefs = useRef<Record<number, HTMLVideoElement | null>>({});
 
   const MAX_RETRIES = 3;
   const RETRY_DELAY = 10000; // 10 seconds between retries
@@ -40,7 +41,8 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     retryCount: 0,
     lastError: '',
     connectionStatus: 'idle',
-    lastAttempt: 0
+    lastAttempt: 0,
+    hlsAvailable: false
   });
 
   const updateCameraState = (cameraId: number, updates: Partial<CameraState>) => {
@@ -48,6 +50,25 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
       ...prev,
       [cameraId]: { ...prev[cameraId] || initializeCameraState(cameraId), ...updates }
     }));
+  };
+
+  // Check if HLS file exists
+  const checkHLSAvailability = async (cameraId: number) => {
+    try {
+      const response = await fetch(`/hls/camera_${cameraId}.m3u8`, { method: 'HEAD' });
+      const isAvailable = response.ok;
+      updateCameraState(cameraId, { hlsAvailable: isAvailable });
+      if (onLog) {
+        onLog(`HLS file for Camera ${cameraId}: ${isAvailable ? 'Available' : 'Not found'}`);
+      }
+      return isAvailable;
+    } catch (error) {
+      updateCameraState(cameraId, { hlsAvailable: false });
+      if (onLog) {
+        onLog(`HLS check failed for Camera ${cameraId}: ${error.message}`);
+      }
+      return false;
+    }
   };
 
   useEffect(() => {
@@ -109,9 +130,12 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
                 lastError: ''
               });
               if (onLog) onLog(`Camera ${data.cameraId} stream started successfully`);
+              // Check if HLS file is available after a short delay
+              setTimeout(() => checkHLSAvailability(data.cameraId), 3000);
             } else {
               updateCameraState(data.cameraId, {
-                connectionStatus: 'idle'
+                connectionStatus: 'idle',
+                hlsAvailable: false
               });
               if (onLog) onLog(`Camera ${data.cameraId} stream stopped`);
             }
@@ -127,7 +151,8 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
             updateCameraState(data.cameraId, {
               connectionStatus: 'failed',
               lastError: data.error,
-              retryCount: cameraState.retryCount + 1
+              retryCount: cameraState.retryCount + 1,
+              hlsAvailable: false
             });
             
             if (onLog) onLog(`Camera ${data.cameraId} stream error: ${data.error} (attempt ${cameraState.retryCount + 1}/${MAX_RETRIES})`);
@@ -204,7 +229,8 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
       updateCameraState(cameraId, {
         retryCount: 0,
         lastError: '',
-        connectionStatus: 'idle'
+        connectionStatus: 'idle',
+        hlsAvailable: false
       });
       
       // Clear any existing retry timeout
@@ -239,7 +265,8 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
 
     updateCameraState(cameraId, {
       connectionStatus: 'connecting',
-      lastAttempt: Date.now()
+      lastAttempt: Date.now(),
+      hlsAvailable: false
     });
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -269,7 +296,8 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     updateCameraState(cameraId, {
       connectionStatus: 'idle',
       retryCount: 0,
-      lastError: ''
+      lastError: '',
+      hlsAvailable: false
     });
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -293,7 +321,8 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     updateCameraState(cameraId, {
       retryCount: 0,
       lastError: '',
-      connectionStatus: 'idle'
+      connectionStatus: 'idle',
+      hlsAvailable: false
     });
 
     setActiveStreams(prev => ({ ...prev, [cameraId]: false }));
@@ -331,6 +360,31 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     setTempName('');
   };
 
+  const handleVideoError = (cameraId: number, error: any) => {
+    const videoElement = videoRefs.current[cameraId];
+    if (onLog) {
+      onLog(`Video element error for Camera ${cameraId}: ${error.type} - Code: ${error.target?.error?.code}`);
+    }
+    
+    // Check if HLS file exists when video fails
+    checkHLSAvailability(cameraId);
+    
+    updateCameraState(cameraId, {
+      lastError: `Video error: ${error.target?.error?.code || 'Unknown'}`,
+      hlsAvailable: false
+    });
+  };
+
+  const handleVideoCanPlay = (cameraId: number) => {
+    if (onLog) {
+      onLog(`Video element can play for Camera ${cameraId}`);
+    }
+    updateCameraState(cameraId, {
+      hlsAvailable: true,
+      lastError: ''
+    });
+  };
+
   const renderCamera = (cameraId: number) => {
     const isActive = activeStreams[cameraId];
     const url = cameraUrls[cameraId];
@@ -340,8 +394,9 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     const cameraState = cameraStates[cameraId] || initializeCameraState(cameraId);
 
     const getStatusColor = () => {
+      if (isActive && cameraState.hlsAvailable) return 'bg-green-500';
+      if (isActive && !cameraState.hlsAvailable) return 'bg-orange-500';
       switch (cameraState.connectionStatus) {
-        case 'connected': return 'bg-green-500';
         case 'connecting': return 'bg-yellow-500 animate-pulse';
         case 'failed': return 'bg-red-500';
         default: return 'bg-gray-500';
@@ -349,7 +404,8 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     };
 
     const getStatusText = () => {
-      if (isActive) return 'Live';
+      if (isActive && cameraState.hlsAvailable) return 'Live';
+      if (isActive && !cameraState.hlsAvailable) return 'Converting...';
       switch (cameraState.connectionStatus) {
         case 'connecting': return 'Connecting...';
         case 'failed': return `Failed (${cameraState.retryCount}/${MAX_RETRIES})`;
@@ -465,21 +521,24 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
         <div className="flex-1 relative group">
           {isActive ? (
             <video
+              ref={(el) => videoRefs.current[cameraId] = el}
               className="w-full h-full object-cover"
               autoPlay
               muted
               playsInline
+              controls={false}
               src={`/hls/camera_${cameraId}.m3u8`}
-              onError={() => {
-                const errMsg = `Video element error for Camera ${cameraId}`;
-                console.error(errMsg);
-                if (onLog) {
-                  onLog(errMsg);
-                }
-                // Don't immediately set stream as inactive - let backend handle retries
+              onError={(e) => handleVideoError(cameraId, e)}
+              onCanPlay={() => handleVideoCanPlay(cameraId)}
+              onLoadStart={() => {
+                if (onLog) onLog(`Video loading started for Camera ${cameraId}`);
+              }}
+              onLoadedData={() => {
+                if (onLog) onLog(`Video data loaded for Camera ${cameraId}`);
               }}
             >
               <source src={`/hls/camera_${cameraId}.m3u8`} type="application/x-mpegURL" />
+              Your browser does not support HLS video playback.
             </video>
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-gray-700">
@@ -494,6 +553,11 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
                 {cameraState.retryCount >= MAX_RETRIES && (
                   <p className="text-xs text-orange-400 mt-1">
                     Max retries reached. Click ⚠️ to reset.
+                  </p>
+                )}
+                {isActive && !cameraState.hlsAvailable && (
+                  <p className="text-xs text-yellow-400 mt-1">
+                    FFmpeg processing RTSP stream...
                   </p>
                 )}
               </div>
