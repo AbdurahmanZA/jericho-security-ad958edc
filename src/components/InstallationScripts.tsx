@@ -29,17 +29,121 @@ const InstallationScripts = () => {
 
   const scripts = {
     linux: `#!/bin/bash
-# JERICHO Security System - Linux Installation Script
-sudo systemctl stop apache2 && \\
-sudo rm -rf /var/www/html/* && \\
-sudo chown -R www-data:www-data /var/www/html/ && \\
-sudo rm -rf jericho-security-ad958edc
-git clone https://github.com/AbdurahmanZA/jericho-security-ad958edc.git && \\
-cd jericho-security-ad958edc/ && \\
-npm install && \\
-npm run build && \\
-sudo cp -r dist/* /var/www/html/ && \\
-sudo systemctl restart apache2`,
+# JERICHO Security System - Ubuntu Installation Script
+set -e  # Exit on any error
+
+echo "Starting JERICHO Security System installation..."
+
+# Check if running as root
+if [[ $EUID -eq 0 ]]; then
+   echo "This script should not be run as root. Please run as a regular user with sudo privileges."
+   exit 1
+fi
+
+# Update system packages
+echo "Updating system packages..."
+sudo apt update && sudo apt upgrade -y
+
+# Install prerequisites
+echo "Installing prerequisites..."
+sudo apt install -y curl git apache2 nodejs npm
+
+# Check Node.js version (requires 16+)
+NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+if [ "$NODE_VERSION" -lt 16 ]; then
+    echo "Installing Node.js 18 LTS..."
+    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+fi
+
+# Stop Apache if running
+echo "Stopping Apache..."
+sudo systemctl stop apache2
+
+# Clean web directory
+echo "Cleaning web directory..."
+sudo rm -rf /var/www/html/*
+
+# Set proper ownership
+sudo chown -R $USER:www-data /var/www/html/
+sudo chmod -R 755 /var/www/html/
+
+# Remove old installation
+echo "Removing old installation..."
+rm -rf jericho-security-system
+
+# Clone repository (replace with actual repo URL)
+echo "Cloning JERICHO Security System..."
+git clone https://github.com/yourusername/jericho-security-system.git
+cd jericho-security-system/
+
+# Install dependencies
+echo "Installing Node.js dependencies..."
+npm install
+
+# Build application
+echo "Building application..."
+npm run build
+
+# Copy build files to Apache directory
+echo "Deploying to Apache..."
+sudo cp -r dist/* /var/www/html/
+
+# Configure Apache
+echo "Configuring Apache..."
+sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<EOF
+<VirtualHost *:80>
+    ServerAdmin admin@localhost
+    DocumentRoot /var/www/html
+    
+    # Enable mod_rewrite for React Router
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule . /index.html [L]
+    
+    # Security headers
+    Header always set X-Content-Type-Options nosniff
+    Header always set X-Frame-Options DENY
+    Header always set X-XSS-Protection "1; mode=block"
+    
+    ErrorLog \${APACHE_LOG_DIR}/jericho_error.log
+    CustomLog \${APACHE_LOG_DIR}/jericho_access.log combined
+</VirtualHost>
+EOF
+
+# Enable required Apache modules
+echo "Enabling Apache modules..."
+sudo a2enmod rewrite headers
+sudo a2ensite jericho.conf
+sudo a2dissite 000-default.conf
+
+# Set proper permissions
+sudo chown -R www-data:www-data /var/www/html/
+sudo chmod -R 644 /var/www/html/
+sudo find /var/www/html/ -type d -exec chmod 755 {} \\;
+
+# Configure firewall
+echo "Configuring firewall..."
+sudo ufw allow 'Apache Full'
+
+# Start Apache
+echo "Starting Apache..."
+sudo systemctl enable apache2
+sudo systemctl start apache2
+
+# Cleanup
+cd ..
+rm -rf jericho-security-system/
+
+echo "Installation completed successfully!"
+echo "JERICHO Security System is now available at: http://$(hostname -I | awk '{print $1}')"
+echo "Local access: http://localhost"
+echo ""
+echo "Next steps:"
+echo "1. Configure your camera RTSP URLs in the web interface"
+echo "2. Set up SSL certificate for HTTPS (recommended for production)"
+echo "3. Configure backup and monitoring"`,
 
     windows: `@echo off
 REM JERICHO Security System - Windows Installation Script
@@ -195,15 +299,15 @@ networks:
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <Terminal className="w-5 h-5" />
-                <span>Linux Installation (Ubuntu/Debian)</span>
+                <span>Ubuntu/Debian Installation</span>
               </CardTitle>
               <CardDescription>
-                Bash script for Apache2 web server deployment. Requires sudo privileges.
+                Production-ready bash script with error handling, security configurations, and Apache setup.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="relative">
-                <pre className="bg-muted p-4 rounded-lg text-sm overflow-x-auto">
+                <pre className="bg-muted p-4 rounded-lg text-sm overflow-x-auto max-h-96">
                   <code>{scripts.linux}</code>
                 </pre>
                 <Button
@@ -219,9 +323,18 @@ networks:
                   )}
                 </Button>
               </div>
-              <div className="mt-4 text-sm text-muted-foreground">
-                <p><strong>Prerequisites:</strong> Git, Node.js, npm, Apache2</p>
-                <p><strong>Usage:</strong> Save as install.sh, make executable with chmod +x install.sh, then run ./install.sh</p>
+              <div className="mt-4 text-sm text-muted-foreground space-y-2">
+                <p><strong>Prerequisites:</strong> Ubuntu 18.04+ with sudo privileges</p>
+                <p><strong>What it does:</strong></p>
+                <ul className="list-disc ml-4 space-y-1">
+                  <li>Updates system packages</li>
+                  <li>Installs Node.js 18 LTS, Apache2, and dependencies</li>
+                  <li>Configures Apache with React Router support</li>
+                  <li>Sets up security headers and firewall rules</li>
+                  <li>Enables automatic startup</li>
+                </ul>
+                <p><strong>Usage:</strong> Save as install.sh, make executable: <code>chmod +x install.sh</code>, then run: <code>./install.sh</code></p>
+                <p><strong>Important:</strong> Update the GitHub repository URL in the script before running</p>
               </div>
             </CardContent>
           </Card>
@@ -384,11 +497,13 @@ networks:
         </CardHeader>
         <CardContent className="text-sm text-orange-700 dark:text-orange-300">
           <ul className="space-y-2">
+            <li>• <strong>Update GitHub URL:</strong> Replace placeholder repository URL with your actual repo</li>
             <li>• Ensure all prerequisites are installed before running scripts</li>
             <li>• Run with appropriate privileges (sudo/Administrator)</li>
             <li>• Test in a development environment first</li>
-            <li>• Configure firewall rules for ports 3000 and 3001</li>
-            <li>• For production, consider using HTTPS and proper SSL certificates</li>
+            <li>• Configure firewall rules for ports 80, 443, 3000, and 3001</li>
+            <li>• For production, set up SSL certificates (Let's Encrypt recommended)</li>
+            <li>• The script creates Apache virtual host and enables required modules</li>
           </ul>
         </CardContent>
       </Card>
