@@ -107,11 +107,41 @@ sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<EOF
     Header always set X-Frame-Options DENY
     Header always set X-XSS-Protection "1; mode=block"
     
-    # Handle static assets
+    # MIME type configuration for modern web assets
+    AddType text/css .css
+    AddType application/javascript .js
+    AddType application/json .json
+    AddType image/svg+xml .svg
+    AddType font/woff .woff
+    AddType font/woff2 .woff2
+    
+    # Handle static assets with proper caching
     <Directory "/var/www/html">
-        Options Indexes FollowSymLinks
+        Options -Indexes +FollowSymLinks
         AllowOverride All
         Require all granted
+        
+        # Cache static assets
+        <FilesMatch "\\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2)$">
+            ExpiresActive On
+            ExpiresDefault "access plus 1 month"
+            Header append Cache-Control "public"
+        </FilesMatch>
+    </Directory>
+    
+    # Specific configuration for assets directory
+    <Directory "/var/www/html/assets">
+        Options -Indexes +FollowSymLinks
+        AllowOverride None
+        Require all granted
+        
+        # Force correct MIME types for assets
+        <FilesMatch "\\.css$">
+            ForceType text/css
+        </FilesMatch>
+        <FilesMatch "\\.js$">
+            ForceType application/javascript
+        </FilesMatch>
     </Directory>
     
     ErrorLog \${APACHE_LOG_DIR}/jericho_error.log
@@ -121,7 +151,7 @@ EOF
 
 # Enable required Apache modules
 echo "Enabling Apache modules..."
-sudo a2enmod rewrite headers
+sudo a2enmod rewrite headers expires mime
 sudo a2ensite jericho.conf
 sudo a2dissite 000-default.conf
 
@@ -293,7 +323,8 @@ export const scriptMetadata = {
       "Configures Apache with React Router support",
       "Sets up security headers and firewall rules",
       "Enables automatic startup",
-      "Includes deployment verification"
+      "Includes deployment verification",
+      "Configures proper MIME types for modern web assets"
     ]
   },
   windows: {
