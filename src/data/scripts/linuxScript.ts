@@ -93,6 +93,19 @@ echo "Installing backend dependencies..."
 cd /opt/jericho-backend
 sudo npm install
 
+# Create HLS and snapshots directories with proper permissions and symlinks
+echo "Setting up HLS and snapshots directories..."
+sudo mkdir -p /opt/jericho-backend/hls
+sudo mkdir -p /opt/jericho-backend/snapshots
+sudo chown -R www-data:www-data /opt/jericho-backend/hls
+sudo chown -R www-data:www-data /opt/jericho-backend/snapshots
+sudo chmod 755 /opt/jericho-backend/hls
+sudo chmod 755 /opt/jericho-backend/snapshots
+
+# Create symlinks so Apache can serve the files
+sudo ln -sf /opt/jericho-backend/hls /var/www/html/hls
+sudo ln -sf /opt/jericho-backend/snapshots /var/www/html/snapshots
+
 # Configure Asterisk
 echo "Configuring Asterisk..."
 sudo systemctl stop asterisk 2>/dev/null || true
@@ -222,6 +235,8 @@ echo "sudo systemctl status apache2"
 echo "sudo systemctl status asterisk"
 echo "\\n📁 Backend directory: /opt/jericho-backend"
 echo "📁 Asterisk configs: /etc/asterisk/"
+echo "📁 HLS streams: /opt/jericho-backend/hls (served at /hls/)"
+echo "📁 Snapshots: /opt/jericho-backend/snapshots (served at /snapshots/)"
 echo "\\n📋 VoIP Setup:"
 echo "1. Go to Settings > SIP/VoIP in web interface"
 echo "2. Configure SIP settings and create extensions"
@@ -232,7 +247,9 @@ echo "Backend logs: sudo journalctl -u jericho-backend -f"
 echo "Asterisk status: sudo systemctl status asterisk"
 echo "Asterisk CLI: sudo asterisk -r"
 echo "SIP peers: sudo asterisk -rx 'sip show peers'"
+echo "Check HLS files: ls -la /opt/jericho-backend/hls/"
 echo "=================================="
 
 echo "\\n🟢 HTTPS ACCESS: If you have a domain pointing to this server, update the DOMAIN variable in this script and rerun."
-echo "\\n🔄 VoIP is configured with G.729 codec support for efficient bandwidth usage."`;
+echo "\\n🔄 VoIP is configured with G.729 codec support for efficient bandwidth usage."
+echo "\\n✅ HLS and snapshots directories are properly configured with symlinks for Apache serving."`;
