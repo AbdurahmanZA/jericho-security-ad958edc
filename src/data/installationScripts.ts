@@ -1,7 +1,8 @@
+
 export const installationScripts = {
   linux: `#!/bin/bash
-# JERICHO Security System - Ubuntu Installation Script
-set -e  # Exit on any error
+# JERICHO Security System - Simple Ubuntu Installation Script
+set -e
 
 echo "Starting JERICHO Security System installation..."
 
@@ -11,12 +12,9 @@ if [[ $EUID -eq 0 ]]; then
    exit 1
 fi
 
-# Update system packages
-echo "Updating system packages..."
-sudo apt update && sudo apt upgrade -y
-
-# Install prerequisites
+# Update system and install prerequisites
 echo "Installing prerequisites..."
+sudo apt update && sudo apt upgrade -y
 sudo apt install -y curl git apache2 nodejs npm
 
 # Check Node.js version (requires 16+)
@@ -27,285 +25,142 @@ if [ "$NODE_VERSION" -lt 16 ]; then
     sudo apt-get install -y nodejs
 fi
 
-# Stop Apache if running
-echo "Stopping Apache..."
+# Stop Apache and clean directory
 sudo systemctl stop apache2
-
-# Clean web directory
-echo "Cleaning web directory..."
 sudo rm -rf /var/www/html/*
-
-# Set proper ownership
 sudo chown -R $USER:www-data /var/www/html/
-sudo chmod -R 755 /var/www/html/
 
-# Remove old installation
-echo "Removing old installation..."
-rm -rf jericho-security-ad958edc
+# Install directly from GitHub using npm
+echo "Installing JERICHO Security System from GitHub..."
+cd /tmp
+rm -rf jericho-install
+mkdir jericho-install && cd jericho-install
 
-# Clone repository
-echo "Cloning JERICHO Security System..."
-git clone https://github.com/AbdurahmanZA/jericho-security-ad958edc.git
-cd jericho-security-ad958edc/
-
-# Install dependencies
-echo "Installing Node.js dependencies..."
-npm install
-
-# Build application
-echo "Building application..."
+# Use npm to install from GitHub - this handles everything
+npm install github:AbdurahmanZA/jericho-security-ad958edc
+cd node_modules/jericho-security-ad958edc
 npm run build
 
-# Check if build was successful
-if [ ! -d "dist" ]; then
-    echo "Build failed - dist directory not found"
-    exit 1
-fi
-
-# Copy build files to Apache directory
-echo "Deploying to Apache..."
+# Deploy to Apache
+echo "Deploying to web server..."
 sudo cp -r dist/* /var/www/html/
+sudo chown -R www-data:www-data /var/www/html/
 
-# Ensure index.html exists
-if [ ! -f "/var/www/html/index.html" ]; then
-    echo "Warning: index.html not found in build output"
-    echo "Creating fallback index.html..."
-    sudo tee /var/www/html/index.html > /dev/null <<EOF
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JERICHO Security System</title>
-</head>
-<body>
-    <div id="root">
-        <h1>JERICHO Security System</h1>
-        <p>If you see this message, the build deployment may have failed.</p>
-        <p>Please check the installation logs and try again.</p>
-    </div>
-</body>
-</html>
-EOF
-fi
-
-# Configure Apache
+# Simple Apache configuration
 echo "Configuring Apache..."
 sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<EOF
 <VirtualHost *:80>
-    ServerAdmin admin@localhost
     DocumentRoot /var/www/html
     
-    # Global MIME type configuration - CRITICAL for proper asset serving
-    AddType text/css .css
-    AddType application/javascript .js
-    AddType application/json .json
-    AddType image/svg+xml .svg
-    AddType font/woff .woff
-    AddType font/woff2 .woff2
-    
-    # Explicit assets directory - serve static files ONLY
-    <Directory "/var/www/html/assets">
-        Options -Indexes -FollowSymLinks
-        AllowOverride None
-        Require all granted
-        
-        # DISABLE rewrite engine completely for assets
-        RewriteEngine Off
-        
-        # Force MIME types - this is the key fix
-        <FilesMatch "\\.css$">
-            ForceType text/css
-            Header set Content-Type "text/css"
-        </FilesMatch>
-        <FilesMatch "\\.js$">
-            ForceType application/javascript
-            Header set Content-Type "application/javascript"
-        </FilesMatch>
-        <FilesMatch "\\.(png|jpg|jpeg|gif|ico|svg)$">
-            ForceType image/svg+xml
-        </FilesMatch>
-        
-        # Cache control for performance
-        <FilesMatch "\\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2)$">
-            ExpiresActive On
-            ExpiresDefault "access plus 1 month"
-            Header append Cache-Control "public"
-        </FilesMatch>
-    </Directory>
-    
-    # Main directory for HTML and React Router
-    <Directory "/var/www/html">
-        Options -Indexes +FollowSymLinks
+    # Enable rewrite for React Router
+    <Directory /var/www/html>
+        RewriteEngine On
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteCond %{REQUEST_FILENAME} !-d
+        RewriteRule . /index.html [L]
         AllowOverride All
         Require all granted
-        
-        # React Router rewrite rules - EXCLUDE assets completely
-        RewriteEngine On
-        
-        # Skip rewrite for existing files and directories
-        RewriteCond %{REQUEST_FILENAME} -f [OR]
-        RewriteCond %{REQUEST_FILENAME} -d
-        RewriteRule ^ - [L]
-        
-        # Skip rewrite for assets directory entirely
-        RewriteCond %{REQUEST_URI} ^/assets/
-        RewriteRule ^ - [L]
-        
-        # Skip rewrite for static file extensions
-        RewriteCond %{REQUEST_URI} \\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|json|txt)$
-        RewriteRule ^ - [L]
-        
-        # Only rewrite remaining requests to index.html
-        RewriteRule ^ /index.html [L]
     </Directory>
     
-    # Security headers
-    Header always set X-Content-Type-Options nosniff
-    Header always set X-Frame-Options DENY
-    Header always set X-XSS-Protection "1; mode=block"
-    
-    ErrorLog \${APACHE_LOG_DIR}/jericho_error.log
-    CustomLog \${APACHE_LOG_DIR}/jericho_access.log combined
-    
-    # Enable logging for debugging
-    LogLevel info rewrite:trace3
+    ErrorLog \${APACHE_LOG_DIR}/error.log
+    CustomLog \${APACHE_LOG_DIR}/access.log combined
 </VirtualHost>
 EOF
 
-# Enable required Apache modules
-echo "Enabling Apache modules..."
-sudo a2enmod rewrite headers expires mime
+# Enable site and restart Apache
+sudo a2enmod rewrite
 sudo a2ensite jericho.conf
 sudo a2dissite 000-default.conf
-
-# Set proper permissions
-sudo chown -R www-data:www-data /var/www/html/
-sudo chmod -R 644 /var/www/html/
-sudo find /var/www/html/ -type d -exec chmod 755 {} \\;
-
-# Configure firewall
-echo "Configuring firewall..."
-sudo ufw allow 'Apache Full'
-
-# Test Apache configuration
-echo "Testing Apache configuration..."
-sudo apache2ctl configtest
-
-# Start Apache
-echo "Starting Apache..."
+sudo systemctl restart apache2
 sudo systemctl enable apache2
-sudo systemctl start apache2
-
-# Debug: List actual files in assets directory
-echo "Checking deployed files..."
-echo "Contents of /var/www/html/:"
-ls -la /var/www/html/
-echo "Contents of /var/www/html/assets/:"
-ls -la /var/www/html/assets/
 
 # Cleanup
-cd ..
-rm -rf jericho-security-ad958edc/
+cd /
+rm -rf /tmp/jericho-install
 
-# Display status
 echo "Installation completed successfully!"
-echo "JERICHO Security System is now available at: http://$(hostname -I | awk '{print $1}')"
-echo "Local access: http://localhost"
-echo ""
-echo "Checking deployment status..."
-if curl -f -s http://localhost > /dev/null; then
-    echo "✓ Web server is responding"
-    echo "Testing asset serving..."
-    ASSET_FILE=$(ls /var/www/html/assets/*.css | head -1 | xargs basename)
-    if [ ! -z "$ASSET_FILE" ]; then
-        echo "Testing CSS file: $ASSET_FILE"
-        curl -I "http://localhost/assets/$ASSET_FILE" | grep -E "(HTTP|Content-Type)"
-    fi
-else
-    echo "✗ Web server is not responding - check Apache logs:"
-    echo "  sudo tail -f /var/log/apache2/jericho_error.log"
-fi
-echo ""
-echo "Next steps:"
-echo "1. Configure your camera RTSP URLs in the web interface"
-echo "2. Set up SSL certificate for HTTPS (recommended for production)"
-echo "3. Configure backup and monitoring"`,
+echo "JERICHO Security System is available at: http://$(hostname -I | awk '{print $1}')"
+echo "Local access: http://localhost"`,
 
   windows: `@echo off
-REM JERICHO Security System - Windows Installation Script
-echo Stopping IIS if running...
+REM JERICHO Security System - Simple Windows Installation
+echo Installing JERICHO Security System...
+
+REM Stop IIS
 iisreset /stop
 
-echo Cleaning web directory...
-rmdir /s /q "C:\\inetpub\\wwwroot\\*"
+REM Clean directory
+rmdir /s /q "C:\\inetpub\\wwwroot"
+mkdir "C:\\inetpub\\wwwroot"
 
-echo Removing old installation...
-rmdir /s /q jericho-security-ad958edc
+REM Install from GitHub using npm
+cd /d "%TEMP%"
+rmdir /s /q jericho-install 2>nul
+mkdir jericho-install
+cd jericho-install
 
-echo Cloning repository...
-git clone https://github.com/AbdurahmanZA/jericho-security-ad958edc.git
-cd jericho-security-ad958edc
-
-echo Installing dependencies...
-npm install
-
-echo Building application...
+npm install github:AbdurahmanZA/jericho-security-ad958edc
+cd node_modules\\jericho-security-ad958edc
 npm run build
 
-echo Copying files to web directory...
+REM Deploy
 xcopy /s /y dist\\* "C:\\inetpub\\wwwroot\\"
 
-echo Starting IIS...
+REM Start IIS
 iisreset /start
 
-echo Installation complete!`,
+echo Installation complete! Access at http://localhost`,
 
   macos: `#!/bin/bash
-# JERICHO Security System - macOS Installation Script
-# Install Homebrew if not present
+# JERICHO Security System - Simple macOS Installation
+set -e
+
+echo "Installing JERICHO Security System..."
+
+# Install Homebrew if needed
 if ! command -v brew &> /dev/null; then
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 fi
 
-# Install nginx if not present
-if ! command -v nginx &> /dev/null; then
-    brew install nginx
-fi
+# Install nginx
+brew install nginx
 
 # Stop nginx
 sudo brew services stop nginx
 
-# Clean web directory
-sudo rm -rf /usr/local/var/www/*
-sudo rm -rf jericho-security-ad958edc
+# Install from GitHub using npm
+cd /tmp
+rm -rf jericho-install
+mkdir jericho-install && cd jericho-install
 
-# Clone and build
-git clone https://github.com/AbdurahmanZA/jericho-security-ad958edc.git && \\
-cd jericho-security-ad958edc/ && \\
-npm install && \\
-npm run build && \\
-sudo cp -r dist/* /usr/local/var/www/ && \\
-sudo brew services start nginx`,
+npm install github:AbdurahmanZA/jericho-security-ad958edc
+cd node_modules/jericho-security-ad958edc
+npm run build
+
+# Deploy
+sudo rm -rf /usr/local/var/www/*
+sudo cp -r dist/* /usr/local/var/www/
+
+# Start nginx
+sudo brew services start nginx
+
+echo "Installation complete! Access at http://localhost:8080"`,
 
   docker: `# JERICHO Security System - Docker Installation
-# Create docker-compose.yml file first, then run:
+# Pull and run the official Docker image
 
-docker-compose down
-docker-compose pull
-docker-compose up -d
+docker stop jericho-security 2>/dev/null || true
+docker rm jericho-security 2>/dev/null || true
 
-# Or using Docker directly:
-docker stop jericho-security || true
-docker rm jericho-security || true
-docker pull abdurahmanza/jericho-security-system:latest
 docker run -d \\
   --name jericho-security \\
-  -p 3000:3000 \\
+  -p 80:80 \\
   -p 3001:3001 \\
   -v jericho-data:/app/data \\
   --restart unless-stopped \\
-  abdurahmanza/jericho-security-system:latest`,
+  abdurahmanza/jericho-security-system:latest
+
+echo "JERICHO Security System is running at http://localhost"`,
 
   dockerCompose: `version: '3.8'
 
@@ -314,79 +169,54 @@ services:
     image: abdurahmanza/jericho-security-system:latest
     container_name: jericho-security
     ports:
-      - "3000:3000"
+      - "80:80"
       - "3001:3001"
     volumes:
       - jericho-data:/app/data
-      - jericho-config:/app/config
     environment:
       - NODE_ENV=production
-      - WEBSOCKET_PORT=3001
     restart: unless-stopped
-    networks:
-      - jericho-network
-
-  nginx:
-    image: nginx:alpine
-    container_name: jericho-nginx
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-    depends_on:
-      - jericho-security
-    networks:
-      - jericho-network
 
 volumes:
-  jericho-data:
-  jericho-config:
-
-networks:
-  jericho-network:
-    driver: bridge`
+  jericho-data:`
 };
 
 export const scriptMetadata = {
   linux: {
     title: "Ubuntu/Debian Installation",
-    description: "Production-ready bash script with error handling, security configurations, and Apache setup.",
+    description: "Simplified installation using npm's GitHub integration. Installs directly from the repository.",
     prerequisites: "Ubuntu 18.04+ with sudo privileges",
     usage: "Save as install.sh, make executable: chmod +x install.sh, then run: ./install.sh",
     features: [
-      "Updates system packages",
-      "Installs Node.js 18 LTS, Apache2, and dependencies",
-      "Configures Apache with React Router support",
-      "Sets up security headers and firewall rules",
-      "Enables automatic startup",
-      "Includes deployment verification",
-      "Configures proper MIME types for modern web assets",
-      "Fixes asset serving with proper rewrite rules"
+      "Uses npm's built-in GitHub installation",
+      "Automatic dependency resolution",
+      "Simple Apache configuration",
+      "Minimal setup with maximum reliability",
+      "Easy to maintain and debug"
     ]
   },
   windows: {
-    title: "Windows Installation",
-    description: "Batch script for IIS web server deployment. Run as Administrator.",
+    title: "Windows Installation", 
+    description: "Simple batch script using npm GitHub installation with IIS.",
     prerequisites: "Git, Node.js, npm, IIS",
     usage: "Save as install.bat and run as Administrator"
   },
   macos: {
     title: "macOS Installation",
-    description: "Bash script using Homebrew and Nginx. Installs dependencies automatically.",
+    description: "Simplified installation using npm and Homebrew with nginx.",
     prerequisites: "Xcode Command Line Tools",
     usage: "Save as install.sh, make executable with chmod +x install.sh, then run ./install.sh"
   },
   docker: {
     title: "Docker Installation",
-    description: "Docker commands for containerized deployment. Cross-platform solution.",
+    description: "Simple Docker run command for immediate deployment.",
     prerequisites: "Docker Engine",
-    ports: "3000 (Web UI), 3001 (WebSocket)"
+    ports: "80 (Web UI), 3001 (WebSocket)"
   },
   compose: {
     title: "Docker Compose",
-    description: "Complete docker-compose.yml for production deployment with Nginx reverse proxy.",
-    prerequisites: "Docker, Docker Compose",
+    description: "Minimal docker-compose.yml for production deployment.",
+    prerequisites: "Docker, Docker Compose", 
     usage: "Save as docker-compose.yml, then run docker-compose up -d"
   }
 };
