@@ -38,9 +38,14 @@ sudo tee /var/www/html/.htaccess > /dev/null <<'EOF'
 # Enable rewrite engine
 RewriteEngine On
 
-# Do not rewrite requests for the assets directory
+# Do not rewrite requests for the assets directory (stop rewrite early)
 RewriteCond %{REQUEST_URI} ^/assets/ [NC]
 RewriteRule .* - [L]
+
+# Serve CSS/JS with the correct content types
+AddType text/css .css
+AddType application/javascript .js
+AddType application/json .json
 
 # Handle Angular and React Router - send everything to index.html
 RewriteCond %{REQUEST_FILENAME} !-f
@@ -48,20 +53,20 @@ RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^.*$ /index.html [QSA,L]
 
 # Force correct MIME types for assets
-<FilesMatch "\\.css$">
+<FilesMatch "\.css$">
     ForceType text/css
 </FilesMatch>
 
-<FilesMatch "\\.js$">
+<FilesMatch "\.js$">
     ForceType application/javascript
 </FilesMatch>
 
-<FilesMatch "\\.json$">
+<FilesMatch "\.json$">
     ForceType application/json
 </FilesMatch>
 
 # Set proper headers for assets
-<FilesMatch "\\.(css|js|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$">
+<FilesMatch "\.(css|js|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$">
     Header set Cache-Control "public, max-age=31536000"
     Header unset ETag
 </FilesMatch>
