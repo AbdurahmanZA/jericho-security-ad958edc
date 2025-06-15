@@ -24,7 +24,7 @@ const BackendLogsDrawer: React.FC<Props> = ({
           Backend Server Logs ({logs.length})
         </DrawerTitle>
         <DrawerDescription>
-          System events and service messages from the backend server (mock/sample data—replace with live backend integration).
+          Real-time system events and service messages from the backend server.
         </DrawerDescription>
         <div className="flex items-center space-x-2 mt-2">
           <Button
@@ -61,8 +61,8 @@ const BackendLogsDrawer: React.FC<Props> = ({
         {logs.length === 0 ? (
           <div className="text-center text-muted-foreground py-6">
             <Video className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p className="font-medium">No backend logs yet</p>
-            <p className="text-xs mt-1">Backend server/system events will appear here.</p>
+            <p className="font-medium">No backend logs available</p>
+            <p className="text-xs mt-1">Connect to the backend server to view live system logs.</p>
           </div>
         ) : (
           <pre className="text-xs font-mono bg-muted/50 rounded px-3 py-2 whitespace-pre-wrap break-words select-all cursor-text min-h-64">

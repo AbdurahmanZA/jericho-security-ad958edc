@@ -45,34 +45,57 @@ const Index = () => {
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
   const [showBackendLogDrawer, setShowBackendLogDrawer] = useState(false);
-  const [backendLogs, setBackendLogs] = useState<string[]>([
-    // These are sample backend logs. Replace with API/frontend logic as needed.
-    "[2025-06-15 17:41:11] [INFO] Server booting up...",
-    "[2025-06-15 17:41:13] [SYSTEM] Initiated RTSP relay worker pool",
-    "[2025-06-15 17:41:14] [FFMPEG] FFMPEG v6.1.1 detected",
-    "[2025-06-15 17:41:15] [HTTP] Started on 0.0.0.0:3001",
-    "[2025-06-15 17:41:20] [AUTH] Key verified for camera endpoint",
-    "[2025-06-15 17:41:22] [STREAM] Camera 1 stream started",
-    "[2025-06-15 17:42:01] [SYSTEM] Certbot auto-renewal check complete",
-    "[2025-06-15 17:42:10] [STREAM] Camera 2 stream error: Connection timeout",
-    "[2025-06-15 17:43:44] [SYSTEM] Garbage collection completed for stale streams"
-  ]);
+  const [backendLogs, setBackendLogs] = useState<string[]>([]);
+  const [backendConnected, setBackendConnected] = useState(false);
 
-  const TOTAL_CAMERAS = 32; // We'll support up to 32 cameras with pagination
+  const TOTAL_CAMERAS = 32;
   const totalPages = Math.ceil(TOTAL_CAMERAS / layout);
 
-  // Move addDebugLog to the component top-level so it's accessible everywhere in Index
   const addDebugLog = (msg: string, category: string = 'SYSTEM') => {
-    // Filter logs to focus on streams and important events
     const relevantCategories = ['STREAM', 'CAMERA', 'ERROR', 'CONNECTION'];
     if (!relevantCategories.includes(category)) {
-      return; // Skip logging irrelevant messages
+      return;
     }
 
     const timestamp = new Date().toLocaleTimeString();
     const detailedMsg = `[${timestamp}] [${category}] ${msg}`;
     console.log(detailedMsg);
-    setDebugLogs(prev => [detailedMsg, ...prev].slice(0, 50)); // Keep fewer logs, focus on recent
+    setDebugLogs(prev => [detailedMsg, ...prev].slice(0, 50));
+  };
+
+  const addBackendLog = (msg: string) => {
+    const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    const logEntry = `[${timestamp}] ${msg}`;
+    setBackendLogs(prev => [logEntry, ...prev].slice(0, 100));
+  };
+
+  const fetchBackendLogs = async () => {
+    try {
+      const response = await fetch('http://192.168.0.138:3001/api/logs');
+      if (response.ok) {
+        const logs = await response.json();
+        setBackendLogs(logs);
+      }
+    } catch (error) {
+      addBackendLog(`[ERROR] Failed to fetch backend logs: ${error.message}`);
+    }
+  };
+
+  const fetchSystemStatus = async () => {
+    try {
+      const response = await fetch('http://192.168.0.138:3001/api/status');
+      if (response.ok) {
+        const status = await response.json();
+        setSystemStatus(prev => ({
+          ...prev,
+          activeStreams: status.activeStreams?.length || 0,
+          uptime: status.uptime || prev.uptime
+        }));
+        addBackendLog(`[INFO] System status updated - Active streams: ${status.activeStreams?.length || 0}`);
+      }
+    } catch (error) {
+      addBackendLog(`[ERROR] Failed to fetch system status: ${error.message}`);
+    }
   };
 
   const copyLogsToClipboard = async () => {
@@ -112,7 +135,7 @@ const Index = () => {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'jericho-logs.txt';
+    a.download = 'jericho-stream-logs.txt';
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
@@ -121,12 +144,61 @@ const Index = () => {
     }, 0);
     toast({
       title: "Logs Downloaded",
-      description: "RTSP stream logs downloaded as jericho-logs.txt",
+      description: "RTSP stream logs downloaded as jericho-stream-logs.txt",
+    });
+  };
+
+  const copyBackendLogsToClipboard = async () => {
+    try {
+      if (!backendLogs.length) {
+        toast({
+          title: "No Backend Logs",
+          description: "There are no backend logs to copy.",
+          variant: "destructive",
+        });
+        return;
+      }
+      await navigator.clipboard.writeText(backendLogs.join('\n'));
+      toast({
+        title: "Backend Logs Copied",
+        description: "Backend server logs copied to clipboard",
+      });
+    } catch (error) {
+      toast({
+        title: "Copy Failed",
+        description: "Could not copy backend logs.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const downloadBackendLogsToFile = () => {
+    if (!backendLogs.length) {
+      toast({
+        title: "No Backend Logs",
+        description: "There are no backend logs to download.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const blob = new Blob([backendLogs.join('\n')], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'jericho-backend-logs.txt';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    }, 0);
+    toast({
+      title: "Backend Logs Downloaded",
+      description: "Backend server logs downloaded as jericho-backend-logs.txt",
     });
   };
 
   useEffect(() => {
-    // Initialize WebSocket connection with minimal logging
     const connectWebSocket = () => {
       const currentAttempt = connectionAttempts + 1;
       setConnectionAttempts(currentAttempt);
@@ -134,17 +206,25 @@ const Index = () => {
       try {
         if (currentAttempt === 1) {
           addDebugLog('Attempting to connect to WebSocket server for live monitoring', 'CONNECTION');
+          addBackendLog('[CONNECTION] Attempting WebSocket connection to backend server');
         }
-        // Automatically select ws:// or wss:// depending on frontend protocol
+        
         const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const wsHost = "192.168.0.138:3001";  // You can change the IP if needed
+        const wsHost = "192.168.0.138:3001";
         const wsUrl = `${wsProtocol}//${wsHost}`;
 
         wsRef.current = new WebSocket(wsUrl);
 
         wsRef.current.onopen = () => {
           addDebugLog('Live monitoring connection established', 'CONNECTION');
+          addBackendLog('[CONNECTION] WebSocket connection established successfully');
           setConnectionAttempts(0);
+          setBackendConnected(true);
+          
+          // Fetch initial data when connected
+          fetchSystemStatus();
+          fetchBackendLogs();
+          
           toast({
             title: "System Connected",
             description: "Real-time monitoring active",
@@ -155,10 +235,14 @@ const Index = () => {
           try {
             const data = JSON.parse(event.data);
             
+            // Log all backend messages
+            addBackendLog(`[WEBSOCKET] Received: ${JSON.stringify(data)}`);
+            
             if (data.type === 'motion') {
               setMotionEvents(prev => [data, ...prev.slice(0, 14)]);
               setSystemStatus(prev => ({ ...prev, totalEvents: prev.totalEvents + 1 }));
               addDebugLog(`Motion detected on Camera ${data.camera} (${data.severity} severity)`, 'CAMERA');
+              addBackendLog(`[MOTION] Detected on Camera ${data.camera} - ${data.severity} severity`);
               
               toast({
                 title: "Motion Detected",
@@ -167,40 +251,52 @@ const Index = () => {
               });
             } else if (data.type === 'status') {
               setSystemStatus(data.status);
+              addBackendLog('[STATUS] System status updated from backend');
             } else if (data.type === 'stream_error') {
               addDebugLog(`Stream error on Camera ${data.camera}: ${data.error}`, 'ERROR');
+              addBackendLog(`[STREAM_ERROR] Camera ${data.camera}: ${data.error}`);
             } else if (data.type === 'stream_connected') {
               addDebugLog(`Stream connected successfully for Camera ${data.camera}`, 'STREAM');
+              addBackendLog(`[STREAM_CONNECTED] Camera ${data.camera} stream established`);
             } else if (data.type === 'stream_disconnected') {
               addDebugLog(`Stream disconnected for Camera ${data.camera}`, 'STREAM');
+              addBackendLog(`[STREAM_DISCONNECTED] Camera ${data.camera} stream ended`);
+            } else if (data.type === 'log') {
+              addBackendLog(data.message);
             }
           } catch (parseError) {
             addDebugLog(`Failed to parse server message: ${parseError}`, 'ERROR');
+            addBackendLog(`[ERROR] Failed to parse WebSocket message: ${parseError.message}`);
           }
         };
 
         wsRef.current.onclose = (event) => {
+          setBackendConnected(false);
           if (currentAttempt === 1) {
-            addDebugLog('Live monitoring disconnected (no backend server available)', 'CONNECTION');
+            addDebugLog('Live monitoring disconnected (backend server unavailable)', 'CONNECTION');
+            addBackendLog('[CONNECTION] WebSocket connection closed');
           }
           
-          // Only try to reconnect a few times, then stop spamming
           if (currentAttempt < 3) {
             setTimeout(connectWebSocket, 5000);
           } else if (currentAttempt === 3) {
-            addDebugLog('Stopped attempting WebSocket reconnection. This is normal without a backend server.', 'CONNECTION');
+            addDebugLog('Stopped attempting WebSocket reconnection', 'CONNECTION');
+            addBackendLog('[CONNECTION] Stopped reconnection attempts after 3 failures');
           }
         };
 
         wsRef.current.onerror = () => {
-          // Only log the first error to avoid spam
+          setBackendConnected(false);
           if (currentAttempt === 1) {
-            addDebugLog('WebSocket connection failed - this is expected without a backend server', 'CONNECTION');
+            addDebugLog('WebSocket connection failed - backend server may not be running', 'CONNECTION');
+            addBackendLog('[ERROR] WebSocket connection failed - check backend server status');
           }
         };
       } catch (error) {
+        setBackendConnected(false);
         if (currentAttempt === 1) {
           addDebugLog(`WebSocket initialization failed: ${error.message}`, 'ERROR');
+          addBackendLog(`[ERROR] WebSocket initialization failed: ${error.message}`);
         }
         if (currentAttempt < 3) {
           setTimeout(connectWebSocket, 5000);
@@ -210,6 +306,13 @@ const Index = () => {
 
     connectWebSocket();
 
+    // Periodic system status updates
+    const statusInterval = setInterval(() => {
+      if (backendConnected) {
+        fetchSystemStatus();
+      }
+    }, 30000); // Update every 30 seconds
+
     // Load saved configuration
     const savedConfig = localStorage.getItem('jericho-config');
     if (savedConfig) {
@@ -218,8 +321,10 @@ const Index = () => {
         setLayout(config.layout || 4);
         setIsFullscreen(config.fullscreen || false);
         addDebugLog(`Configuration loaded: ${config.layout} camera layout`, 'SYSTEM');
+        addBackendLog(`[CONFIG] Loaded saved configuration: ${config.layout} camera layout`);
       } catch (error) {
         addDebugLog(`Failed to load saved configuration: ${error.message}`, 'ERROR');
+        addBackendLog(`[ERROR] Failed to load saved configuration: ${error.message}`);
       }
     }
 
@@ -227,6 +332,7 @@ const Index = () => {
       if (wsRef.current) {
         wsRef.current.close();
       }
+      clearInterval(statusInterval);
     };
   }, [toast]);
 
@@ -367,9 +473,9 @@ const Index = () => {
               <SidebarTrigger className="text-foreground hover:text-jericho-accent" />
               <div className="flex items-center space-x-4 ml-auto">
                 <div className="flex items-center space-x-2 text-sm">
-                  <div className="w-2 h-2 bg-green-400 rounded-full security-pulse"></div>
+                  <div className={`w-2 h-2 rounded-full ${backendConnected ? 'bg-green-400 security-pulse' : 'bg-red-400'}`}></div>
                   <span className="font-semibold uppercase tracking-wide text-jericho-very-light">
-                    Live Monitoring
+                    {backendConnected ? 'Live Monitoring' : 'Backend Offline'}
                   </span>
                 </div>
                 <Button
@@ -486,25 +592,8 @@ const Index = () => {
           open={showBackendLogDrawer}
           onOpenChange={setShowBackendLogDrawer}
           logs={backendLogs}
-          onCopy={async () => {
-            if (backendLogs.length) {
-              await navigator.clipboard.writeText(backendLogs.join('\n'));
-            }
-          }}
-          onDownload={() => {
-            if (!backendLogs.length) return;
-            const blob = new Blob([backendLogs.join('\n')], { type: 'text/plain' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'backend-logs.txt';
-            document.body.appendChild(a);
-            a.click();
-            setTimeout(() => {
-              document.body.removeChild(a);
-              window.URL.revokeObjectURL(url);
-            }, 0);
-          }}
+          onCopy={copyBackendLogsToClipboard}
+          onDownload={downloadBackendLogsToFile}
           onClear={() => setBackendLogs([])}
         />
 

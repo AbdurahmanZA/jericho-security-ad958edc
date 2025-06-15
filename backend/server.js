@@ -1,4 +1,3 @@
-
 // JERICHO Security System Backend Server (copied from install script)
 
 const express = require('express');
@@ -191,8 +190,21 @@ app.get('/api/status', (req, res) => {
     status: 'running',
     activeStreams: Array.from(activeStreams.keys()),
     connectedClients: connectedClients.size,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
   });
+});
+
+// New endpoint for backend logs
+app.get('/api/logs', (req, res) => {
+  // Return recent logs - in a real implementation, you might store these in a database or file
+  const recentLogs = [
+    `[${new Date().toISOString().slice(0, 19).replace('T', ' ')}] [INFO] Backend server running on port ${PORT}`,
+    `[${new Date().toISOString().slice(0, 19).replace('T', ' ')}] [STATUS] Active streams: ${activeStreams.size}`,
+    `[${new Date().toISOString().slice(0, 19).replace('T', ' ')}] [STATUS] Connected clients: ${connectedClients.size}`,
+    `[${new Date().toISOString().slice(0, 19).replace('T', ' ')}] [SYSTEM] Server uptime: ${Math.floor(process.uptime())} seconds`
+  ];
+  res.json(recentLogs);
 });
 
 app.get('/api/cameras', (req, res) => {
@@ -293,6 +305,33 @@ app.post('/api/cameras/:id/snapshot', (req, res) => {
     }
   });
 });
+
+// Enhanced logging function
+function logToClients(level, message) {
+  const logEntry = {
+    type: 'log',
+    level: level,
+    message: `[${new Date().toISOString().slice(0, 19).replace('T', ' ')}] [${level}] ${message}`,
+    timestamp: new Date().toISOString()
+  };
+  
+  broadcast(logEntry);
+  console.log(logEntry.message);
+}
+
+// Update existing console.log statements to use the new logging function
+const originalConsoleLog = console.log;
+console.log = function(...args) {
+  originalConsoleLog.apply(console, args);
+  const message = args.join(' ');
+  if (message.includes('JERICHO') || message.includes('FFmpeg') || message.includes('RTSP') || message.includes('Client')) {
+    broadcast({
+      type: 'log',
+      message: `[${new Date().toISOString().slice(0, 19).replace('T', ' ')}] [INFO] ${message}`,
+      timestamp: new Date().toISOString()
+    });
+  }
+};
 
 // Start server
 server.listen(PORT, () => {
