@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Camera, Play, Square, Image, Edit2, Check, X } from 'lucide-react';
@@ -21,6 +21,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   const [tempUrl, setTempUrl] = useState('');
   const [tempName, setTempName] = useState('');
   const { toast } = useToast();
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     // Load saved camera URLs and names
@@ -43,6 +44,48 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     // Save camera names whenever they change
     localStorage.setItem('jericho-camera-names', JSON.stringify(cameraNames));
   }, [cameraNames]);
+
+  useEffect(() => {
+    // Initialize WebSocket for RTSP stream control
+    let ws: WebSocket;
+    function connectWebSocket() {
+      ws = new WebSocket("ws://localhost:3001");
+      ws.onopen = () => {
+        if (onLog) onLog("CameraGrid connected to backend WebSocket for stream control.");
+      };
+      ws.onclose = () => {
+        if (onLog) onLog("CameraGrid WebSocket disconnected. Attempting reconnect in 5s");
+        setTimeout(connectWebSocket, 5000);
+      };
+      ws.onerror = (e) => {
+        if (onLog) onLog("CameraGrid WebSocket error: " + (e instanceof Event ? e.type : ""));
+      };
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "stream_status" && typeof data.cameraId !== "undefined") {
+            setActiveStreams((prev) => ({
+              ...prev,
+              [data.cameraId]: data.status === "started"
+            }));
+            if (onLog) onLog(`Camera ${data.cameraId} stream status: ${data.status} at ${data.timestamp}`);
+          }
+          if (data.type === "stream_error" && typeof data.cameraId !== "undefined") {
+            setActiveStreams((prev) => ({
+              ...prev,
+              [data.cameraId]: false
+            }));
+            if (onLog) onLog(`Camera ${data.cameraId} stream error: ${data.error}`);
+          }
+        } catch {}
+      };
+      wsRef.current = ws;
+    }
+    connectWebSocket();
+    return () => { ws && ws.close(); };
+    // Avoid extra effect triggers (single establish)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const getGridClasses = () => {
     const baseClasses = 'h-full';
@@ -102,36 +145,29 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   };
 
   const startStream = async (cameraId: number, url: string) => {
-    try {
-      const response = await fetch('/api/stream/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cameraId, url })
-      });
-
-      if (response.ok) {
-        setActiveStreams(prev => ({ ...prev, [cameraId]: true }));
-      } else {
-        throw new Error('Failed to start stream');
-      }
-    } catch (error) {
-      console.error('Stream start error:', error);
-      toast({
-        title: "Stream Error",
-        description: `Failed to start Camera ${cameraId}`,
-        variant: "destructive",
-      });
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'start_stream',
+        cameraId,
+        rtspUrl: url,
+      }));
+      setActiveStreams(prev => ({ ...prev, [cameraId]: true })); // optimistic update; backend will confirm via stream_status
+      if (onLog) onLog(`Sent start_stream to backend for Camera ${cameraId}`);
+    } else {
+      if (onLog) onLog(`WebSocket not connected - cannot start Camera ${cameraId}.`);
     }
   };
 
   const stopStream = async (cameraId: number) => {
-    try {
-      const response = await fetch(`/api/stream/stop/${cameraId}`, { method: 'POST' });
-      if (response.ok) {
-        setActiveStreams(prev => ({ ...prev, [cameraId]: false }));
-      }
-    } catch (error) {
-      console.error('Stream stop error:', error);
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'stop_stream',
+        cameraId,
+      }));
+      setActiveStreams(prev => ({ ...prev, [cameraId]: false }));
+      if (onLog) onLog(`Sent stop_stream to backend for Camera ${cameraId}`);
+    } else {
+      if (onLog) onLog(`WebSocket not connected - cannot stop Camera ${cameraId}.`);
     }
   };
 

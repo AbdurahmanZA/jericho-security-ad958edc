@@ -59,8 +59,15 @@ const Index = () => {
 
   const copyLogsToClipboard = async () => {
     try {
-      const logsText = debugLogs.join('\n');
-      await navigator.clipboard.writeText(logsText);
+      if (!debugLogs.length) {
+        toast({
+          title: "No Logs",
+          description: "There are no stream logs to copy.",
+          variant: "destructive",
+        });
+        return;
+      }
+      await navigator.clipboard.writeText(debugLogs.join('\n'));
       toast({
         title: "Logs Copied",
         description: "RTSP stream logs copied to clipboard",
@@ -68,7 +75,7 @@ const Index = () => {
     } catch (error) {
       toast({
         title: "Copy Failed",
-        description: "Failed to copy logs to clipboard",
+        description: "Could not copy logs. Check your browser permissions or try a secure (https) page.",
         variant: "destructive",
       });
     }
