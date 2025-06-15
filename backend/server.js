@@ -1,3 +1,4 @@
+
 // JERICHO Security System Backend Server (copied from install script)
 
 const express = require('express');
@@ -264,52 +265,58 @@ function broadcast(message) {
 
 // RTSP Stream Management
 function startRTSPStream(cameraId, rtspUrl) {
-  if (activeStreams.has(cameraId)) {
-    console.log(`Stream ${cameraId} already active`);
+  // Ensure cameraId is properly converted to string for file paths
+  const cameraIdStr = String(cameraId);
+  
+  if (activeStreams.has(cameraIdStr)) {
+    console.log(`Stream ${cameraIdStr} already active`);
     return;
   }
 
   const streamType = detectStreamType(rtspUrl);
-  console.log(`Starting RTSP stream for camera ${cameraId} (${streamType}): ${rtspUrl}`);
+  console.log(`Starting RTSP stream for camera ${cameraIdStr} (${streamType}): ${rtspUrl}`);
 
-  const outputPath = path.join(HLS_DIR, `camera_${cameraId}.m3u8`);
+  const outputPath = path.join(HLS_DIR, `camera_${cameraIdStr}.m3u8`);
+  console.log(`Output path: ${outputPath}`);
+  
   const ffmpegParams = getFFmpegParams(streamType, rtspUrl, outputPath);
+  console.log(`FFmpeg params: ${ffmpegParams.join(' ')}`);
 
   const ffmpeg = spawn('ffmpeg', ffmpegParams);
 
   ffmpeg.on('spawn', () => {
-    console.log(`FFmpeg process started for camera ${cameraId} with ${streamType} optimizations`);
-    activeStreams.set(cameraId, ffmpeg);
+    console.log(`FFmpeg process started for camera ${cameraIdStr} with ${streamType} optimizations`);
+    activeStreams.set(cameraIdStr, ffmpeg);
 
     broadcast({
       type: 'stream_status',
-      cameraId: cameraId,
+      cameraId: parseInt(cameraIdStr),
       status: 'started',
       streamType: streamType,
-      hlsUrl: `/hls/camera_${cameraId}.m3u8`,
+      hlsUrl: `/hls/camera_${cameraIdStr}.m3u8`,
       timestamp: new Date().toISOString()
     });
   });
 
   ffmpeg.on('error', (error) => {
-    console.error(`FFmpeg error for camera ${cameraId}:`, error);
-    activeStreams.delete(cameraId);
+    console.error(`FFmpeg error for camera ${cameraIdStr}:`, error);
+    activeStreams.delete(cameraIdStr);
 
     broadcast({
       type: 'stream_error',
-      cameraId: cameraId,
+      cameraId: parseInt(cameraIdStr),
       error: error.message,
       timestamp: new Date().toISOString()
     });
   });
 
   ffmpeg.on('exit', (code) => {
-    console.log(`FFmpeg process exited for camera ${cameraId} with code ${code}`);
-    activeStreams.delete(cameraId);
+    console.log(`FFmpeg process exited for camera ${cameraIdStr} with code ${code}`);
+    activeStreams.delete(cameraIdStr);
 
     broadcast({
       type: 'stream_status',
-      cameraId: cameraId,
+      cameraId: parseInt(cameraIdStr),
       status: 'stopped',
       timestamp: new Date().toISOString()
     });
@@ -319,20 +326,21 @@ function startRTSPStream(cameraId, rtspUrl) {
     const output = data.toString();
     // Log important FFmpeg output for debugging
     if (output.includes('Stream mapping') || output.includes('Input #0') || output.includes('fps=')) {
-      console.log(`FFmpeg info for camera ${cameraId} (${streamType}):`, output.trim());
+      console.log(`FFmpeg info for camera ${cameraIdStr} (${streamType}):`, output.trim());
     }
     if (output.includes('error') || output.includes('Error') || output.includes('failed')) {
-      console.error(`FFmpeg stderr for camera ${cameraId}:`, output);
+      console.error(`FFmpeg stderr for camera ${cameraIdStr}:`, output);
     }
   });
 }
 
 function stopRTSPStream(cameraId) {
-  const stream = activeStreams.get(cameraId);
+  const cameraIdStr = String(cameraId);
+  const stream = activeStreams.get(cameraIdStr);
   if (stream) {
-    console.log(`Stopping RTSP stream for camera ${cameraId}`);
+    console.log(`Stopping RTSP stream for camera ${cameraIdStr}`);
     stream.kill('SIGTERM');
-    activeStreams.delete(cameraId);
+    activeStreams.delete(cameraIdStr);
   }
 }
 
