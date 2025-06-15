@@ -56,9 +56,38 @@ npm install
 echo "Building application..."
 npm run build
 
+# Check if build was successful
+if [ ! -d "dist" ]; then
+    echo "Build failed - dist directory not found"
+    exit 1
+fi
+
 # Copy build files to Apache directory
 echo "Deploying to Apache..."
 sudo cp -r dist/* /var/www/html/
+
+# Ensure index.html exists
+if [ ! -f "/var/www/html/index.html" ]; then
+    echo "Warning: index.html not found in build output"
+    echo "Creating fallback index.html..."
+    sudo tee /var/www/html/index.html > /dev/null <<EOF
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JERICHO Security System</title>
+</head>
+<body>
+    <div id="root">
+        <h1>JERICHO Security System</h1>
+        <p>If you see this message, the build deployment may have failed.</p>
+        <p>Please check the installation logs and try again.</p>
+    </div>
+</body>
+</html>
+EOF
+fi
 
 # Configure Apache
 echo "Configuring Apache..."
@@ -77,6 +106,13 @@ sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<EOF
     Header always set X-Content-Type-Options nosniff
     Header always set X-Frame-Options DENY
     Header always set X-XSS-Protection "1; mode=block"
+    
+    # Handle static assets
+    <Directory "/var/www/html">
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
     
     ErrorLog \${APACHE_LOG_DIR}/jericho_error.log
     CustomLog \${APACHE_LOG_DIR}/jericho_access.log combined
@@ -98,6 +134,10 @@ sudo find /var/www/html/ -type d -exec chmod 755 {} \\;
 echo "Configuring firewall..."
 sudo ufw allow 'Apache Full'
 
+# Test Apache configuration
+echo "Testing Apache configuration..."
+sudo apache2ctl configtest
+
 # Start Apache
 echo "Starting Apache..."
 sudo systemctl enable apache2
@@ -107,9 +147,18 @@ sudo systemctl start apache2
 cd ..
 rm -rf jericho-security-ad958edc/
 
+# Display status
 echo "Installation completed successfully!"
 echo "JERICHO Security System is now available at: http://$(hostname -I | awk '{print $1}')"
 echo "Local access: http://localhost"
+echo ""
+echo "Checking deployment status..."
+if curl -f -s http://localhost > /dev/null; then
+    echo "✓ Web server is responding"
+else
+    echo "✗ Web server is not responding - check Apache logs:"
+    echo "  sudo tail -f /var/log/apache2/jericho_error.log"
+fi
 echo ""
 echo "Next steps:"
 echo "1. Configure your camera RTSP URLs in the web interface"
@@ -243,7 +292,8 @@ export const scriptMetadata = {
       "Installs Node.js 18 LTS, Apache2, and dependencies",
       "Configures Apache with React Router support",
       "Sets up security headers and firewall rules",
-      "Enables automatic startup"
+      "Enables automatic startup",
+      "Includes deployment verification"
     ]
   },
   windows: {
