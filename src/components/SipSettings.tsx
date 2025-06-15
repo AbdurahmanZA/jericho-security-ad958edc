@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,7 +28,7 @@ export const SipSettings: React.FC = () => {
     sipPort: '5060',
     rtpPortStart: '10000',
     rtpPortEnd: '20000',
-    codec: 'g729',
+    codec: 'gsm',
     realm: 'jericho.local',
     enabled: false
   });
@@ -89,7 +88,7 @@ export const SipSettings: React.FC = () => {
         <div>
           <h3 className="text-lg font-bold uppercase tracking-wide">SIP & VoIP Settings</h3>
           <p className="text-sm text-muted-foreground mt-1">
-            Configure Asterisk PBX with G729 codec for emergency calling
+            Configure Asterisk PBX with GSM/G729 codec for emergency calling
           </p>
         </div>
         <div className="flex items-center space-x-3">
@@ -174,6 +173,7 @@ export const SipSettings: React.FC = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="gsm">GSM (13kbps) - Recommended</SelectItem>
                     <SelectItem value="g729">G.729 (8kbps)</SelectItem>
                     <SelectItem value="g711a">G.711 A-law (64kbps)</SelectItem>
                     <SelectItem value="g711u">G.711 μ-law (64kbps)</SelectItem>
@@ -193,13 +193,14 @@ export const SipSettings: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+            <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-4">
               <div className="flex items-start space-x-2">
-                <Info className="w-5 h-5 text-blue-600 mt-0.5" />
+                <Info className="w-5 h-5 text-green-600 mt-0.5" />
                 <div>
-                  <h5 className="font-semibold text-blue-800 dark:text-blue-200">G729 Open Source Codec</h5>
-                  <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                    Using open source G729 codec implementation. No licensing fees required for this configuration.
+                  <h5 className="font-semibold text-green-800 dark:text-green-200">GSM Codec (Default)</h5>
+                  <p className="text-sm text-green-700 dark:text-green-300 mt-1">
+                    GSM codec provides excellent voice quality at 13kbps with built-in Asterisk support. No additional licensing required.
+                    Perfect for emergency communications with reliable compression and good audio quality.
                   </p>
                 </div>
               </div>

@@ -106,6 +106,64 @@ sudo chmod 755 /opt/jericho-backend/snapshots
 sudo ln -sf /opt/jericho-backend/hls /var/www/html/hls
 sudo ln -sf /opt/jericho-backend/snapshots /var/www/html/snapshots
 
+# Configure Apache for proper HLS file serving
+sudo tee /etc/apache2/sites-available/jericho-hls.conf > /dev/null <<'EOAPACHECONF'
+<VirtualHost *:80>
+    ServerAdmin admin@jericho.local
+    ServerName jericho.local
+    DocumentRoot /var/www/html
+
+    # Enable CORS for HLS files
+    Header always set Access-Control-Allow-Origin "*"
+    Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS"
+    Header always set Access-Control-Allow-Headers "Content-Type"
+
+    # HLS specific configuration
+    <Directory "/var/www/html/hls">
+        Options Indexes FollowSymLinks
+        AllowOverride None
+        Require all granted
+        
+        # Set proper MIME types for HLS
+        AddType application/vnd.apple.mpegurl .m3u8
+        AddType video/mp2t .ts
+        
+        # Cache control for HLS files
+        ExpiresActive On
+        ExpiresByType application/vnd.apple.mpegurl "access plus 1 seconds"
+        ExpiresByType video/mp2t "access plus 10 seconds"
+        
+        # Enable range requests for HLS segments
+        Header set Accept-Ranges bytes
+    </Directory>
+
+    <Directory "/var/www/html/snapshots">
+        Options Indexes FollowSymLinks
+        AllowOverride None
+        Require all granted
+        
+        # Cache control for snapshots
+        ExpiresActive On
+        ExpiresByType image/jpeg "access plus 1 hour"
+        ExpiresByType image/png "access plus 1 hour"
+    </Directory>
+
+    # Proxy settings for backend API and WebSocket
+    ProxyPreserveHost On
+    ProxyPass /api/ http://localhost:3001/api/
+    ProxyPassReverse /api/ http://localhost:3001/api/
+    ProxyPass /ws/ ws://localhost:3001/
+    ProxyPassReverse /ws/ ws://localhost:3001/
+
+    ErrorLog \${APACHE_LOG_DIR}/error.log
+    CustomLog \${APACHE_LOG_DIR}/access.log combined
+</VirtualHost>
+EOAPACHECONF
+
+# Enable the HLS site configuration
+sudo a2ensite jericho-hls.conf
+sudo a2dissite 000-default.conf
+
 # Configure Asterisk
 echo "Configuring Asterisk..."
 sudo systemctl stop asterisk 2>/dev/null || true
@@ -184,20 +242,40 @@ if [ -n "\$DOMAIN" ]; then
     SSLCertificateFile /etc/ssl/certs/jericho-selfsigned.crt
     SSLCertificateKeyFile /etc/ssl/private/jericho-selfsigned.key
 
+    # Enable CORS for HLS files
+    Header always set Access-Control-Allow-Origin "*"
+    Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS"
+    Header always set Access-Control-Allow-Headers "Content-Type"
+
     <Directory /var/www/html>
         AllowOverride All
         Require all granted
         Options Indexes FollowSymLinks
     </Directory>
 
+    # HLS specific configuration
+    <Directory "/var/www/html/hls">
+        Options Indexes FollowSymLinks
+        AllowOverride None
+        Require all granted
+        
+        # Set proper MIME types for HLS
+        AddType application/vnd.apple.mpegurl .m3u8
+        AddType video/mp2t .ts
+        
+        # Cache control for HLS files
+        ExpiresActive On
+        ExpiresByType application/vnd.apple.mpegurl "access plus 1 seconds"
+        ExpiresByType video/mp2t "access plus 10 seconds"
+        
+        # Enable range requests for HLS segments
+        Header set Accept-Ranges bytes
+    </Directory>
+
     # Proxy settings for backend API, HLS, WebSocket, etc.
     ProxyPreserveHost On
     ProxyPass /api/ http://localhost:3001/api/
     ProxyPassReverse /api/ http://localhost:3001/api/
-    ProxyPass /hls/ http://localhost:3001/hls/
-    ProxyPassReverse /hls/ http://localhost:3001/hls/
-    ProxyPass /snapshots/ http://localhost:3001/snapshots/
-    ProxyPassReverse /snapshots/ http://localhost:3001/snapshots/
     ProxyPass /ws/ ws://localhost:3001/
     ProxyPassReverse /ws/ ws://localhost:3001/
 
@@ -207,6 +285,10 @@ if [ -n "\$DOMAIN" ]; then
 EOSSLCONF
   sudo a2ensite jericho-ssl.conf
 fi
+
+# Enable Apache modules for proper HLS handling
+sudo a2enmod expires
+sudo a2enmod headers
 
 # Always enable and reload Apache configs, HTTP and HTTPS
 sudo systemctl daemon-reload
@@ -239,7 +321,7 @@ echo "📁 HLS streams: /opt/jericho-backend/hls (served at /hls/)"
 echo "📁 Snapshots: /opt/jericho-backend/snapshots (served at /snapshots/)"
 echo "\\n📋 VoIP Setup:"
 echo "1. Go to Settings > SIP/VoIP in web interface"
-echo "2. Configure SIP settings and create extensions"
+echo "2. Configure SIP settings and create extensions (GSM codec recommended)"
 echo "3. Start Asterisk from the web interface"
 echo "4. Test SIP registration with softphone"
 echo "\\n🔧 Useful commands:"
@@ -248,8 +330,9 @@ echo "Asterisk status: sudo systemctl status asterisk"
 echo "Asterisk CLI: sudo asterisk -r"
 echo "SIP peers: sudo asterisk -rx 'sip show peers'"
 echo "Check HLS files: ls -la /opt/jericho-backend/hls/"
+echo "Test HLS serving: curl -I http://localhost/hls/"
 echo "=================================="
 
 echo "\\n🟢 HTTPS ACCESS: If you have a domain pointing to this server, update the DOMAIN variable in this script and rerun."
-echo "\\n🔄 VoIP is configured with G.729 codec support for efficient bandwidth usage."
-echo "\\n✅ HLS and snapshots directories are properly configured with symlinks for Apache serving."`;
+echo "\\n🔄 VoIP is configured with GSM codec support (default) for reliable emergency communications."
+echo "\\n✅ HLS serving is now properly configured with CORS headers and MIME types for better browser compatibility."`;

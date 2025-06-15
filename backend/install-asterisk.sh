@@ -4,7 +4,7 @@
 
 set -e
 
-echo "Installing Asterisk with G.729 codec for JERICHO Security System..."
+echo "Installing Asterisk with GSM and G.729 codec for JERICHO Security System..."
 
 # Update system
 sudo apt update
@@ -15,11 +15,16 @@ sudo apt install -y asterisk asterisk-modules asterisk-config asterisk-dev build
 # Install G.729 codec (open source version)
 echo "Installing G.729 codec..."
 cd /tmp
-wget http://asterisk.hosting.lv/src/asterisk-g729-1.5.0-x86_64.tar.bz2
-tar -xjf asterisk-g729-1.5.0-x86_64.tar.bz2
-sudo cp asterisk-g729-1.5.0-x86_64/codec_g729.so /usr/lib/asterisk/modules/
-sudo chown asterisk:asterisk /usr/lib/asterisk/modules/codec_g729.so
-sudo chmod 755 /usr/lib/asterisk/modules/codec_g729.so
+wget http://asterisk.hosting.lv/src/asterisk-g729-1.5.0-x86_64.tar.bz2 || echo "G.729 download failed - GSM codec will be used as default"
+if [ -f asterisk-g729-1.5.0-x86_64.tar.bz2 ]; then
+  tar -xjf asterisk-g729-1.5.0-x86_64.tar.bz2
+  sudo cp asterisk-g729-1.5.0-x86_64/codec_g729.so /usr/lib/asterisk/modules/
+  sudo chown asterisk:asterisk /usr/lib/asterisk/modules/codec_g729.so
+  sudo chmod 755 /usr/lib/asterisk/modules/codec_g729.so
+  echo "G.729 codec installed successfully"
+else
+  echo "Using built-in GSM codec (recommended for emergency communications)"
+fi
 
 # Create backup of original configs
 sudo cp /etc/asterisk/sip.conf /etc/asterisk/sip.conf.backup 2>/dev/null || true
@@ -82,14 +87,14 @@ EOF
 echo "=================================="
 echo "Asterisk Installation Complete!"
 echo "=================================="
-echo "🟢 Asterisk installed with G.729 codec"
+echo "🟢 Asterisk installed with GSM (default) and G.729 codec support"
 echo "🟢 Firewall configured for SIP (5060) and RTP (10000-20000)"
 echo "🟢 Backend integration permissions configured"
 echo ""
 echo "📋 Next steps:"
 echo "1. Restart your JERICHO backend server"
 echo "2. Go to Settings > SIP/VoIP in the web interface"
-echo "3. Configure your SIP settings and extensions"
+echo "3. Configure your SIP settings and extensions (GSM codec recommended)"
 echo "4. Start Asterisk from the web interface"
 echo ""
 echo "🔧 Manual commands:"
@@ -97,4 +102,10 @@ echo "Check status: sudo systemctl status asterisk"
 echo "Start Asterisk: sudo systemctl start asterisk"
 echo "Stop Asterisk: sudo systemctl stop asterisk"
 echo "Asterisk CLI: sudo asterisk -r"
+echo "=================================="
+echo ""
+echo "🎙️ CODEC INFO:"
+echo "• GSM: 13kbps, excellent quality, built-in support"
+echo "• G.729: 8kbps, very efficient, optional module"
+echo "• Recommended: Use GSM for reliability and quality"
 echo "=================================="
