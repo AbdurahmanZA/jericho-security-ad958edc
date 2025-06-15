@@ -1,4 +1,3 @@
-
 export const linuxScript = `#!/bin/bash
 # JERICHO Security System - Ubuntu 24.04 Complete Installation Script
 # Includes frontend, backend server, and RTSP processing modules
@@ -55,8 +54,10 @@ npm install && \\
 npm run build && \\
 sudo cp -r dist/* /var/www/html/
 
-# Set up backend from repository files
-echo "Setting up backend server..."
+# --- Ensure Backend Always Set Up Fresh ---
+
+echo "Setting up backend server (always from latest repo files)..."
+sudo rm -rf /opt/jericho-backend
 sudo mkdir -p /opt/jericho-backend
 sudo cp -r backend/* /opt/jericho-backend/
 sudo chown -R www-data:www-data /opt/jericho-backend
@@ -66,7 +67,7 @@ echo "Installing backend dependencies..."
 cd /opt/jericho-backend
 sudo npm install
 
-# Create systemd service for backend
+# (Re-)Create systemd service for backend
 sudo tee /etc/systemd/system/jericho-backend.service > /dev/null << 'EOF'
 [Unit]
 Description=JERICHO Security System Backend Server
