@@ -1,3 +1,4 @@
+
 export const installationScripts = {
   linux: `#!/bin/bash
 # JERICHO Security System - Ubuntu Installation Script
@@ -96,18 +97,7 @@ sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<EOF
     ServerAdmin admin@localhost
     DocumentRoot /var/www/html
     
-    # Enable mod_rewrite for React Router
-    RewriteEngine On
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule . /index.html [L]
-    
-    # Security headers
-    Header always set X-Content-Type-Options nosniff
-    Header always set X-Frame-Options DENY
-    Header always set X-XSS-Protection "1; mode=block"
-    
-    # MIME type configuration for modern web assets
+    # MIME type configuration - must be set globally
     AddType text/css .css
     AddType application/javascript .js
     AddType application/json .json
@@ -115,13 +105,27 @@ sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<EOF
     AddType font/woff .woff
     AddType font/woff2 .woff2
     
-    # Handle static assets with proper caching
+    # Main directory configuration
     <Directory "/var/www/html">
         Options -Indexes +FollowSymLinks
         AllowOverride All
         Require all granted
         
-        # Cache static assets
+        # Serve static files directly - no rewrite for existing files
+        RewriteEngine On
+        
+        # Don't rewrite files that exist (including assets)
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteCond %{REQUEST_FILENAME} !-d
+        
+        # Don't rewrite asset files specifically
+        RewriteCond %{REQUEST_URI} !^/assets/
+        RewriteCond %{REQUEST_URI} !\\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|json)$
+        
+        # Only rewrite to index.html for non-existing files that aren't assets
+        RewriteRule . /index.html [L]
+        
+        # Cache control for static assets
         <FilesMatch "\\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2)$">
             ExpiresActive On
             ExpiresDefault "access plus 1 month"
@@ -129,13 +133,16 @@ sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<EOF
         </FilesMatch>
     </Directory>
     
-    # Specific configuration for assets directory
+    # Explicit assets directory configuration
     <Directory "/var/www/html/assets">
         Options -Indexes +FollowSymLinks
         AllowOverride None
         Require all granted
         
-        # Force correct MIME types for assets
+        # Disable rewrite engine for assets directory
+        RewriteEngine Off
+        
+        # Force correct MIME types
         <FilesMatch "\\.css$">
             ForceType text/css
         </FilesMatch>
@@ -143,6 +150,11 @@ sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<EOF
             ForceType application/javascript
         </FilesMatch>
     </Directory>
+    
+    # Security headers
+    Header always set X-Content-Type-Options nosniff
+    Header always set X-Frame-Options DENY
+    Header always set X-XSS-Protection "1; mode=block"
     
     ErrorLog \${APACHE_LOG_DIR}/jericho_error.log
     CustomLog \${APACHE_LOG_DIR}/jericho_access.log combined
@@ -173,6 +185,13 @@ echo "Starting Apache..."
 sudo systemctl enable apache2
 sudo systemctl start apache2
 
+# Debug: List actual files in assets directory
+echo "Checking deployed files..."
+echo "Contents of /var/www/html/:"
+ls -la /var/www/html/
+echo "Contents of /var/www/html/assets/:"
+ls -la /var/www/html/assets/
+
 # Cleanup
 cd ..
 rm -rf jericho-security-ad958edc/
@@ -185,6 +204,12 @@ echo ""
 echo "Checking deployment status..."
 if curl -f -s http://localhost > /dev/null; then
     echo "✓ Web server is responding"
+    echo "Testing asset serving..."
+    ASSET_FILE=$(ls /var/www/html/assets/*.css | head -1 | xargs basename)
+    if [ ! -z "$ASSET_FILE" ]; then
+        echo "Testing CSS file: $ASSET_FILE"
+        curl -I "http://localhost/assets/$ASSET_FILE" | grep -E "(HTTP|Content-Type)"
+    fi
 else
     echo "✗ Web server is not responding - check Apache logs:"
     echo "  sudo tail -f /var/log/apache2/jericho_error.log"
@@ -324,7 +349,8 @@ export const scriptMetadata = {
       "Sets up security headers and firewall rules",
       "Enables automatic startup",
       "Includes deployment verification",
-      "Configures proper MIME types for modern web assets"
+      "Configures proper MIME types for modern web assets",
+      "Fixes asset serving with proper rewrite rules"
     ]
   },
   windows: {
