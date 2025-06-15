@@ -44,25 +44,26 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   }, [cameraNames]);
 
   const getGridClasses = () => {
+    const baseClasses = 'h-full';
     if (isFullscreen) {
-      return 'grid grid-cols-4 grid-rows-3 gap-1 h-[calc(100vh-8rem)]';
+      return `grid grid-cols-4 grid-rows-3 gap-1 ${baseClasses}`;
     }
     
     switch (layout) {
       case 1:
-        return 'grid grid-cols-1 gap-4 h-[calc(100vh-8rem)]';
+        return `grid grid-cols-1 gap-4 ${baseClasses}`;
       case 2:
-        return 'grid grid-cols-2 gap-4 h-[calc(100vh-8rem)]';
+        return `grid grid-cols-2 gap-4 ${baseClasses}`;
       case 4:
-        return 'grid grid-cols-2 grid-rows-2 gap-4 h-[calc(100vh-8rem)]';
+        return `grid grid-cols-2 grid-rows-2 gap-4 ${baseClasses}`;
       case 6:
-        return 'grid grid-cols-3 grid-rows-2 gap-3 h-[calc(100vh-8rem)]';
+        return `grid grid-cols-3 grid-rows-2 gap-3 ${baseClasses}`;
       case 9:
-        return 'grid grid-cols-3 grid-rows-3 gap-3 h-[calc(100vh-8rem)]';
+        return `grid grid-cols-3 grid-rows-3 gap-3 ${baseClasses}`;
       case 12:
-        return 'grid grid-cols-4 grid-rows-3 gap-2 h-[calc(100vh-8rem)]';
+        return `grid grid-cols-4 grid-rows-3 gap-2 ${baseClasses}`;
       default:
-        return 'grid grid-cols-2 grid-rows-2 gap-4 h-[calc(100vh-8rem)]';
+        return `grid grid-cols-2 grid-rows-2 gap-4 ${baseClasses}`;
     }
   };
 
@@ -321,8 +322,9 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     );
   };
 
-  const camerasToShow = isFullscreen ? 12 : layout;
-  const startCameraId = isFullscreen ? 1 : (currentPage - 1) * layout + 1;
+  const effectiveLayout = isFullscreen ? 12 : layout;
+  const camerasToShow = effectiveLayout;
+  const startCameraId = (currentPage - 1) * effectiveLayout + 1;
 
   return (
     <div className={getGridClasses()}>

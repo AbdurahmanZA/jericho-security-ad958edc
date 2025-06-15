@@ -8,7 +8,7 @@ import {
   SidebarInset 
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { Camera, Settings, Image, Monitor, Video, Bell, Shield, Plus, Save, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Camera, Settings, Image, Monitor, Video, Bell, Shield, Plus, Save, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { CameraGrid } from '@/components/CameraGrid';
 import { MotionLog } from '@/components/MotionLog';
 import { SnapshotGallery } from '@/components/SnapshotGallery';
@@ -173,6 +173,19 @@ const Index = () => {
     setCurrentPage((prev) => Math.min(prev + 1, totalPages));
   };
 
+  const handleOpenMultiView = () => {
+    const nextPage = currentPage + 1;
+    if (nextPage > totalPages) {
+      toast({
+        title: "No More Camera Pages",
+        description: `You've reached the end. There are only ${totalPages} pages of cameras.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    window.open(`/multiview?page=${nextPage}`, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <SidebarProvider>
@@ -326,6 +339,15 @@ const Index = () => {
                 >
                   <Save className="w-4 h-4 mr-2" />
                   Save Layout
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenMultiView}
+                  className="jericho-btn-primary border-jericho-light/30 text-white hover:jericho-accent-bg hover:text-jericho-primary font-semibold text-xs uppercase tracking-wide"
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  2nd Screen
                 </Button>
                 <Button
                   variant="outline"
