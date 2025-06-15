@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Camera, Play, Square, Image, Edit2, Check, X, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import Hls from 'hls.js';
 
 interface CameraGridProps {
   layout: number;
@@ -33,6 +34,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   const wsRef = useRef<WebSocket | null>(null);
   const retryTimeoutsRef = useRef<Record<number, NodeJS.Timeout>>({});
   const videoRefs = useRef<Record<number, HTMLVideoElement | null>>({});
+  const hlsInstancesRef = useRef<Record<number, Hls>>({});
 
   const MAX_RETRIES = 3;
   const RETRY_DELAY = 10000; // 10 seconds between retries
@@ -179,6 +181,10 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
       ws && ws.close();
       // Clear all retry timeouts
       Object.values(retryTimeoutsRef.current).forEach(timeout => clearTimeout(timeout));
+      // Clean up all HLS instances
+      Object.keys(hlsInstancesRef.current).forEach(cameraId => {
+        cleanupHLSPlayer(parseInt(cameraId));
+      });
     };
     // Avoid extra effect triggers (single establish)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -385,6 +391,78 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     });
   };
 
+  const setupHLSPlayer = (cameraId: number, videoElement: HTMLVideoElement) => {
+    if (!videoElement) return;
+
+    // Clean up existing HLS instance
+    if (hlsInstancesRef.current[cameraId]) {
+      hlsInstancesRef.current[cameraId].destroy();
+      delete hlsInstancesRef.current[cameraId];
+    }
+
+    const hlsUrl = `/hls/camera_${cameraId}.m3u8`;
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: false,
+        lowLatencyMode: true,
+        backBufferLength: 90
+      });
+
+      hlsInstancesRef.current[cameraId] = hls;
+
+      hls.loadSource(hlsUrl);
+      hls.attachMedia(videoElement);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (onLog) onLog(`HLS manifest loaded for Camera ${cameraId}`);
+        videoElement.play().catch(error => {
+          if (onLog) onLog(`Autoplay failed for Camera ${cameraId}: ${error.message}`);
+        });
+      });
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (onLog) onLog(`HLS error for Camera ${cameraId}: ${data.type} - ${data.details}`);
+        
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              if (onLog) onLog(`Network error for Camera ${cameraId}, retrying...`);
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              if (onLog) onLog(`Media error for Camera ${cameraId}, trying to recover...`);
+              hls.recoverMediaError();
+              break;
+            default:
+              if (onLog) onLog(`Fatal error for Camera ${cameraId}, destroying player`);
+              hls.destroy();
+              delete hlsInstancesRef.current[cameraId];
+              break;
+          }
+        }
+      });
+
+    } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari native HLS support
+      videoElement.src = hlsUrl;
+      videoElement.addEventListener('loadedmetadata', () => {
+        videoElement.play().catch(error => {
+          if (onLog) onLog(`Safari autoplay failed for Camera ${cameraId}: ${error.message}`);
+        });
+      });
+    } else {
+      if (onLog) onLog(`HLS not supported for Camera ${cameraId}`);
+    }
+  };
+
+  const cleanupHLSPlayer = (cameraId: number) => {
+    if (hlsInstancesRef.current[cameraId]) {
+      hlsInstancesRef.current[cameraId].destroy();
+      delete hlsInstancesRef.current[cameraId];
+    }
+  };
+
   const renderCamera = (cameraId: number) => {
     const isActive = activeStreams[cameraId];
     const url = cameraUrls[cameraId];
@@ -487,7 +565,10 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => stopStream(cameraId)}
+                onClick={() => {
+                  stopStream(cameraId);
+                  cleanupHLSPlayer(cameraId);
+                }}
                 className="h-6 w-6 p-0"
               >
                 <Square className="w-3 h-3" />
@@ -521,13 +602,17 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
         <div className="flex-1 relative group">
           {isActive ? (
             <video
-              ref={(el) => videoRefs.current[cameraId] = el}
+              ref={(el) => {
+                videoRefs.current[cameraId] = el;
+                if (el && isActive) {
+                  setupHLSPlayer(cameraId, el);
+                }
+              }}
               className="w-full h-full object-cover"
               autoPlay
               muted
               playsInline
               controls={false}
-              src={`/hls/camera_${cameraId}.m3u8`}
               onError={(e) => handleVideoError(cameraId, e)}
               onCanPlay={() => handleVideoCanPlay(cameraId)}
               onLoadStart={() => {
@@ -537,7 +622,6 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
                 if (onLog) onLog(`Video data loaded for Camera ${cameraId}`);
               }}
             >
-              <source src={`/hls/camera_${cameraId}.m3u8`} type="application/x-mpegURL" />
               Your browser does not support HLS video playback.
             </video>
           ) : (
