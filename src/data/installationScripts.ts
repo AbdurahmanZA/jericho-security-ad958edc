@@ -1,4 +1,3 @@
-
 export const installationScripts = {
   linux: `#!/bin/bash
 # JERICHO Security System - Ubuntu Installation Script
@@ -42,12 +41,12 @@ sudo chmod -R 755 /var/www/html/
 
 # Remove old installation
 echo "Removing old installation..."
-rm -rf jericho-security-system
+rm -rf jericho-security-ad958edc
 
-# Clone repository (replace with actual repo URL)
+# Clone repository
 echo "Cloning JERICHO Security System..."
-git clone https://github.com/yourusername/jericho-security-system.git
-cd jericho-security-system/
+git clone https://github.com/AbdurahmanZA/jericho-security-ad958edc.git
+cd jericho-security-ad958edc/
 
 # Install dependencies
 echo "Installing Node.js dependencies..."
@@ -106,7 +105,7 @@ sudo systemctl start apache2
 
 # Cleanup
 cd ..
-rm -rf jericho-security-system/
+rm -rf jericho-security-ad958edc/
 
 echo "Installation completed successfully!"
 echo "JERICHO Security System is now available at: http://$(hostname -I | awk '{print $1}')"
