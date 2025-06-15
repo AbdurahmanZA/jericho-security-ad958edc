@@ -8,7 +8,7 @@ import {
   SidebarInset 
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { Camera, Settings, Image, Monitor, Video, Bell, Shield, Plus, Save } from 'lucide-react';
+import { Camera, Settings, Image, Monitor, Video, Bell, Shield, Plus, Save, ChevronLeft, ChevronRight } from 'lucide-react';
 import { CameraGrid } from '@/components/CameraGrid';
 import { MotionLog } from '@/components/MotionLog';
 import { SnapshotGallery } from '@/components/SnapshotGallery';
@@ -21,6 +21,7 @@ import { Link } from 'react-router-dom';
 const Index = () => {
   const [layout, setLayout] = useState(4);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [showHikvisionSetup, setShowHikvisionSetup] = useState(false);
   const [showMultipleCameraSetup, setShowMultipleCameraSetup] = useState(false);
@@ -33,6 +34,9 @@ const Index = () => {
   });
   const wsRef = useRef(null);
   const { toast } = useToast();
+
+  const TOTAL_CAMERAS = 32; // We'll support up to 32 cameras with pagination
+  const totalPages = Math.ceil(TOTAL_CAMERAS / layout);
 
   useEffect(() => {
     // Initialize WebSocket connection
@@ -109,6 +113,7 @@ const Index = () => {
   const handleLayoutChange = (newLayout) => {
     setLayout(newLayout);
     setIsFullscreen(false);
+    setCurrentPage(1);
   };
 
   const toggleFullscreen = () => {
@@ -116,6 +121,7 @@ const Index = () => {
     if (!isFullscreen) {
       setLayout(12); // Show all cameras in fullscreen
     }
+    setCurrentPage(1);
   };
 
   const saveLayout = () => {
@@ -157,6 +163,14 @@ const Index = () => {
       title: "Multiple Cameras Added",
       description: `${cameras.length} cameras configured successfully`,
     });
+  };
+
+  const handlePrevPage = () => {
+    setCurrentPage((prev) => Math.max(prev - 1, 1));
+  };
+
+  const handleNextPage = () => {
+    setCurrentPage((prev) => Math.min(prev + 1, totalPages));
   };
 
   return (
@@ -285,7 +299,7 @@ const Index = () => {
             </SidebarContent>
           </Sidebar>
 
-          <SidebarInset className="flex-1">
+          <SidebarInset className="flex-1 flex flex-col">
             <header className="flex h-16 shrink-0 items-center gap-2 px-4 border-b border-border jericho-secondary-bg">
               <SidebarTrigger className="text-foreground hover:text-jericho-accent" />
               <div className="flex items-center space-x-4 ml-auto">
@@ -325,12 +339,42 @@ const Index = () => {
               </div>
             </header>
 
-            <main className="flex-1 p-4 bg-background">
-              <CameraGrid 
-                layout={layout} 
-                isFullscreen={isFullscreen}
-                onSnapshot={captureSnapshot}
-              />
+            <main className="flex-1 p-4 bg-background flex flex-col">
+              <div className="flex-grow">
+                <CameraGrid 
+                  layout={layout} 
+                  isFullscreen={isFullscreen}
+                  onSnapshot={captureSnapshot}
+                  currentPage={currentPage}
+                />
+              </div>
+              {!isFullscreen && totalPages > 1 && (
+                <div className="flex-shrink-0 flex justify-center items-center pt-4 space-x-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePrevPage}
+                    disabled={currentPage === 1}
+                    className="jericho-btn-primary border-jericho-light/30 text-white hover:jericho-accent-bg hover:text-jericho-primary"
+                  >
+                    <ChevronLeft className="w-4 h-4 mr-2" />
+                    Previous
+                  </Button>
+                  <span className="text-sm font-medium text-jericho-light">
+                    Page {currentPage} / {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleNextPage}
+                    disabled={currentPage === totalPages}
+                    className="jericho-btn-primary border-jericho-light/30 text-white hover:jericho-accent-bg hover:text-jericho-primary"
+                  >
+                    Next
+                    <ChevronRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
+              )}
             </main>
           </SidebarInset>
         </div>

@@ -8,9 +8,10 @@ interface CameraGridProps {
   layout: number;
   isFullscreen: boolean;
   onSnapshot: (cameraId: number) => void;
+  currentPage?: number;
 }
 
-export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, onSnapshot }) => {
+export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, onSnapshot, currentPage = 1 }) => {
   const [cameraUrls, setCameraUrls] = useState<Record<number, string>>({});
   const [cameraNames, setCameraNames] = useState<Record<number, string>>({});
   const [activeStreams, setActiveStreams] = useState<Record<number, boolean>>({});
@@ -321,10 +322,11 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   };
 
   const camerasToShow = isFullscreen ? 12 : layout;
+  const startCameraId = isFullscreen ? 1 : (currentPage - 1) * layout + 1;
 
   return (
     <div className={getGridClasses()}>
-      {Array.from({ length: camerasToShow }, (_, i) => renderCamera(i + 1))}
+      {Array.from({ length: camerasToShow }, (_, i) => renderCamera(startCameraId + i))}
     </div>
   );
 };
