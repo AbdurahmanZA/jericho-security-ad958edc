@@ -8,7 +8,7 @@ import {
   SidebarInset 
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { Camera, Settings, Image, Monitor, Video, Bell, Shield, Plus, Save, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
+import { Camera, Settings, Image, Monitor, Video, Bell, Shield, Plus, Save, ChevronLeft, ChevronRight, ExternalLink, Copy } from 'lucide-react';
 import { CameraGrid } from '@/components/CameraGrid';
 import { MotionLog } from '@/components/MotionLog';
 import { SnapshotGallery } from '@/components/SnapshotGallery';
@@ -38,23 +38,49 @@ const Index = () => {
   const { toast } = useToast();
   const [showLogDrawer, setShowLogDrawer] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const [connectionAttempts, setConnectionAttempts] = useState(0);
 
   const TOTAL_CAMERAS = 32; // We'll support up to 32 cameras with pagination
   const totalPages = Math.ceil(TOTAL_CAMERAS / layout);
 
   // Move addDebugLog to the component top-level so it's accessible everywhere in Index
   const addDebugLog = (msg: string) => {
-    setDebugLogs(prev => [msg, ...prev].slice(0, 100));
+    const timestamp = new Date().toLocaleTimeString();
+    const detailedMsg = `[${timestamp}] ${msg}`;
+    console.log(detailedMsg);
+    setDebugLogs(prev => [detailedMsg, ...prev].slice(0, 100));
+  };
+
+  const copyLogsToClipboard = async () => {
+    try {
+      const logsText = debugLogs.join('\n');
+      await navigator.clipboard.writeText(logsText);
+      toast({
+        title: "Logs Copied",
+        description: "Debug logs copied to clipboard",
+      });
+    } catch (error) {
+      toast({
+        title: "Copy Failed",
+        description: "Failed to copy logs to clipboard",
+        variant: "destructive",
+      });
+    }
   };
 
   useEffect(() => {
     // Initialize WebSocket connection
     const connectWebSocket = () => {
+      const currentAttempt = connectionAttempts + 1;
+      setConnectionAttempts(currentAttempt);
+      
       try {
+        addDebugLog(`WebSocket connection attempt #${currentAttempt} to ws://localhost:3001`);
         wsRef.current = new WebSocket('ws://localhost:3001');
         
         wsRef.current.onopen = () => {
-          console.log('WebSocket connected');
+          addDebugLog('WebSocket connection established successfully');
+          setConnectionAttempts(0); // Reset on successful connection
           toast({
             title: "System Connected",
             description: "Real-time monitoring active",
@@ -62,39 +88,54 @@ const Index = () => {
         };
         
         wsRef.current.onmessage = (event) => {
-          const data = JSON.parse(event.data);
-          
-          if (data.type === 'motion') {
-            setMotionEvents(prev => [data, ...prev.slice(0, 14)]);
-            setSystemStatus(prev => ({ ...prev, totalEvents: prev.totalEvents + 1 }));
+          try {
+            const data = JSON.parse(event.data);
+            addDebugLog(`WebSocket message received: ${JSON.stringify(data)}`);
             
-            toast({
-              title: "Motion Detected",
-              description: `Camera ${data.camera} - ${data.severity} alert`,
-              variant: data.severity === 'high' ? 'destructive' : 'default',
-            });
-          } else if (data.type === 'status') {
-            setSystemStatus(data.status);
+            if (data.type === 'motion') {
+              setMotionEvents(prev => [data, ...prev.slice(0, 14)]);
+              setSystemStatus(prev => ({ ...prev, totalEvents: prev.totalEvents + 1 }));
+              
+              toast({
+                title: "Motion Detected",
+                description: `Camera ${data.camera} - ${data.severity} alert`,
+                variant: data.severity === 'high' ? 'destructive' : 'default',
+              });
+            } else if (data.type === 'status') {
+              setSystemStatus(data.status);
+            }
+          } catch (parseError) {
+            addDebugLog(`Failed to parse WebSocket message: ${event.data} - Error: ${parseError}`);
           }
         };
         
-        wsRef.current.onclose = () => {
-          const msg = `[${new Date().toLocaleTimeString()}] WebSocket disconnected, attempting to reconnect...`;
-          console.log(msg);
-          addDebugLog(msg);
-          setTimeout(connectWebSocket, 5000);
+        wsRef.current.onclose = (event) => {
+          const reason = event.reason || 'No reason provided';
+          const code = event.code || 'Unknown code';
+          addDebugLog(`WebSocket connection closed. Code: ${code}, Reason: ${reason}, Clean: ${event.wasClean}`);
+          addDebugLog(`This is normal if no backend server is running. Will retry in 5 seconds...`);
+          
+          // Only try to reconnect if we haven't made too many attempts
+          if (currentAttempt < 5) {
+            setTimeout(connectWebSocket, 5000);
+          } else {
+            addDebugLog(`Max connection attempts (${currentAttempt}) reached. Stopping reconnection attempts.`);
+          }
         };
         
         wsRef.current.onerror = (error) => {
-          const errMsg = `[${new Date().toLocaleTimeString()}] WebSocket error: ${JSON.stringify(error)}`;
-          console.error(errMsg);
-          addDebugLog(errMsg);
+          addDebugLog(`WebSocket error occurred: ${JSON.stringify({
+            type: error.type,
+            target: error.target?.readyState,
+            timestamp: Date.now()
+          })}`);
+          addDebugLog(`This error is expected when no backend WebSocket server is available`);
         };
       } catch (error) {
-        const msg = `[${new Date().toLocaleTimeString()}] Failed to connect WebSocket: ${error}`;
-        console.error(msg);
-        addDebugLog(msg);
-        setTimeout(connectWebSocket, 5000);
+        addDebugLog(`Failed to create WebSocket connection: ${error.message || error}`);
+        if (currentAttempt < 5) {
+          setTimeout(connectWebSocket, 5000);
+        }
       }
     };
 
@@ -103,13 +144,19 @@ const Index = () => {
     // Load saved configuration
     const savedConfig = localStorage.getItem('jericho-config');
     if (savedConfig) {
-      const config = JSON.parse(savedConfig);
-      setLayout(config.layout || 4);
-      setIsFullscreen(config.fullscreen || false);
+      try {
+        const config = JSON.parse(savedConfig);
+        setLayout(config.layout || 4);
+        setIsFullscreen(config.fullscreen || false);
+        addDebugLog(`Loaded saved configuration: Layout ${config.layout}, Fullscreen: ${config.fullscreen}`);
+      } catch (error) {
+        addDebugLog(`Failed to parse saved configuration: ${error.message}`);
+      }
     }
 
     return () => {
       if (wsRef.current) {
+        addDebugLog('Closing WebSocket connection due to component unmount');
         wsRef.current.close();
       }
     };
@@ -129,6 +176,7 @@ const Index = () => {
     setLayout(newLayout);
     setIsFullscreen(false);
     setCurrentPage(1);
+    addDebugLog(`Layout changed to ${newLayout} cameras`);
   };
 
   const toggleFullscreen = () => {
@@ -137,6 +185,7 @@ const Index = () => {
       setLayout(12); // Show all cameras in fullscreen
     }
     setCurrentPage(1);
+    addDebugLog(`Fullscreen mode ${!isFullscreen ? 'enabled' : 'disabled'}`);
   };
 
   const saveLayout = () => {
@@ -432,23 +481,45 @@ const Index = () => {
             <DrawerHeader>
               <DrawerTitle>
                 <ListIcon className="inline w-5 h-5 mr-2" />
-                Debug Logs
+                Debug Logs ({debugLogs.length})
               </DrawerTitle>
               <DrawerDescription>
-                Most recent RTSP, video, and socket errors for troubleshooting.
+                Detailed system logs including WebSocket connections, stream errors, and troubleshooting information.
               </DrawerDescription>
+              <div className="flex items-center space-x-2 mt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={copyLogsToClipboard}
+                  disabled={debugLogs.length === 0}
+                >
+                  <Copy className="w-4 h-4 mr-2" />
+                  Copy All Logs
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDebugLogs([])}
+                  disabled={debugLogs.length === 0}
+                >
+                  Clear Logs
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Connection attempts: {connectionAttempts}
+                </span>
+              </div>
             </DrawerHeader>
             <div className="max-h-96 overflow-y-auto px-4 pb-4">
               {debugLogs.length === 0 ? (
                 <div className="text-center text-muted-foreground py-6">
                   <AlertTriangle className="w-8 h-8 mx-auto mb-2 opacity-50" />
                   <p className="font-medium">No debug logs yet</p>
-                  <p className="text-xs mt-1">Stream and socket errors will appear here.</p>
+                  <p className="text-xs mt-1">WebSocket connection errors and stream issues will appear here.</p>
                 </div>
               ) : (
                 <ul className="space-y-2">
                   {debugLogs.map((log, idx) => (
-                    <li key={idx} className="text-xs font-mono bg-muted/50 rounded px-3 py-2">
+                    <li key={idx} className="text-xs font-mono bg-muted/50 rounded px-3 py-2 break-all">
                       {log}
                     </li>
                   ))}
