@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Camera, Play, Square, Image, Edit2, Check, X } from 'lucide-react';
+import { Camera, Play, Square, Image, Edit2, Check, X, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface CameraGridProps {
@@ -12,16 +12,42 @@ interface CameraGridProps {
   onLog?: (msg: string) => void;
 }
 
+interface CameraState {
+  retryCount: number;
+  lastError: string;
+  connectionStatus: 'idle' | 'connecting' | 'connected' | 'failed';
+  lastAttempt: number;
+}
+
 export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, onSnapshot, currentPage = 1, onLog }) => {
   const [cameraUrls, setCameraUrls] = useState<Record<number, string>>({});
   const [cameraNames, setCameraNames] = useState<Record<number, string>>({});
   const [activeStreams, setActiveStreams] = useState<Record<number, boolean>>({});
+  const [cameraStates, setCameraStates] = useState<Record<number, CameraState>>({});
   const [editingCamera, setEditingCamera] = useState<number | null>(null);
   const [editingName, setEditingName] = useState<number | null>(null);
   const [tempUrl, setTempUrl] = useState('');
   const [tempName, setTempName] = useState('');
   const { toast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
+  const retryTimeoutsRef = useRef<Record<number, NodeJS.Timeout>>({});
+
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY = 10000; // 10 seconds between retries
+
+  const initializeCameraState = (cameraId: number): CameraState => ({
+    retryCount: 0,
+    lastError: '',
+    connectionStatus: 'idle',
+    lastAttempt: 0
+  });
+
+  const updateCameraState = (cameraId: number, updates: Partial<CameraState>) => {
+    setCameraStates(prev => ({
+      ...prev,
+      [cameraId]: { ...prev[cameraId] || initializeCameraState(cameraId), ...updates }
+    }));
+  };
 
   useEffect(() => {
     // Load saved camera URLs and names
@@ -56,38 +82,78 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
 
       ws = new WebSocket(wsUrl);
       ws.onopen = () => {
-        if (onLog) onLog("CameraGrid connected to backend WebSocket for stream control.");
+        if (onLog) onLog("WebSocket connected to backend for stream control");
       };
       ws.onclose = () => {
-        if (onLog) onLog("CameraGrid WebSocket disconnected. Attempting reconnect in 5s");
+        if (onLog) onLog("WebSocket disconnected from backend");
         setTimeout(connectWebSocket, 5000);
       };
       ws.onerror = (e) => {
-        if (onLog) onLog("CameraGrid WebSocket error: " + (e instanceof Event ? e.type : ""));
+        if (onLog) onLog("WebSocket connection error - backend may not be running");
       };
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
           if (data.type === "stream_status" && typeof data.cameraId !== "undefined") {
+            const isStarted = data.status === "started";
             setActiveStreams((prev) => ({
               ...prev,
-              [data.cameraId]: data.status === "started"
+              [data.cameraId]: isStarted
             }));
-            if (onLog) onLog(`Camera ${data.cameraId} stream status: ${data.status} at ${data.timestamp}`);
+            
+            if (isStarted) {
+              updateCameraState(data.cameraId, {
+                connectionStatus: 'connected',
+                retryCount: 0,
+                lastError: ''
+              });
+              if (onLog) onLog(`Camera ${data.cameraId} stream started successfully`);
+            } else {
+              updateCameraState(data.cameraId, {
+                connectionStatus: 'idle'
+              });
+              if (onLog) onLog(`Camera ${data.cameraId} stream stopped`);
+            }
           }
           if (data.type === "stream_error" && typeof data.cameraId !== "undefined") {
+            const cameraState = cameraStates[data.cameraId] || initializeCameraState(data.cameraId);
+            
             setActiveStreams((prev) => ({
               ...prev,
               [data.cameraId]: false
             }));
-            if (onLog) onLog(`Camera ${data.cameraId} stream error: ${data.error}`);
+            
+            updateCameraState(data.cameraId, {
+              connectionStatus: 'failed',
+              lastError: data.error,
+              retryCount: cameraState.retryCount + 1
+            });
+            
+            if (onLog) onLog(`Camera ${data.cameraId} stream error: ${data.error} (attempt ${cameraState.retryCount + 1}/${MAX_RETRIES})`);
+            
+            // Only auto-retry if we haven't exceeded max retries
+            if (cameraState.retryCount < MAX_RETRIES) {
+              const url = cameraUrls[data.cameraId];
+              if (url) {
+                if (onLog) onLog(`Will retry Camera ${data.cameraId} in ${RETRY_DELAY/1000} seconds`);
+                retryTimeoutsRef.current[data.cameraId] = setTimeout(() => {
+                  startStream(data.cameraId, url);
+                }, RETRY_DELAY);
+              }
+            } else {
+              if (onLog) onLog(`Camera ${data.cameraId} exceeded max retries (${MAX_RETRIES}). Manual restart required.`);
+            }
           }
         } catch {}
       };
       wsRef.current = ws;
     }
     connectWebSocket();
-    return () => { ws && ws.close(); };
+    return () => { 
+      ws && ws.close();
+      // Clear all retry timeouts
+      Object.values(retryTimeoutsRef.current).forEach(timeout => clearTimeout(timeout));
+    };
     // Avoid extra effect triggers (single establish)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -133,7 +199,19 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
       setEditingCamera(null);
       setTempUrl('');
       
-      // Start the stream
+      // Reset camera state for new URL
+      updateCameraState(cameraId, {
+        retryCount: 0,
+        lastError: '',
+        connectionStatus: 'idle'
+      });
+      
+      // Clear any existing retry timeout
+      if (retryTimeoutsRef.current[cameraId]) {
+        clearTimeout(retryTimeoutsRef.current[cameraId]);
+        delete retryTimeoutsRef.current[cameraId];
+      }
+      
       await startStream(cameraId, url);
       
       toast({
@@ -150,30 +228,81 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   };
 
   const startStream = async (cameraId: number, url: string) => {
+    const cameraState = cameraStates[cameraId] || initializeCameraState(cameraId);
+    
+    // Prevent starting if we're already at max retries
+    if (cameraState.retryCount >= MAX_RETRIES) {
+      if (onLog) onLog(`Camera ${cameraId} has exceeded max retries. Reset required.`);
+      return;
+    }
+
+    updateCameraState(cameraId, {
+      connectionStatus: 'connecting',
+      lastAttempt: Date.now()
+    });
+
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: 'start_stream',
         cameraId,
         rtspUrl: url,
       }));
-      setActiveStreams(prev => ({ ...prev, [cameraId]: true })); // optimistic update; backend will confirm via stream_status
-      if (onLog) onLog(`Sent start_stream to backend for Camera ${cameraId}`);
+      
+      if (onLog) onLog(`Attempting to start Camera ${cameraId} stream (attempt ${cameraState.retryCount + 1}/${MAX_RETRIES})`);
     } else {
-      if (onLog) onLog(`WebSocket not connected - cannot start Camera ${cameraId}.`);
+      updateCameraState(cameraId, {
+        connectionStatus: 'failed',
+        lastError: 'Backend WebSocket not connected'
+      });
+      if (onLog) onLog(`Cannot start Camera ${cameraId} - backend WebSocket not connected`);
     }
   };
 
   const stopStream = async (cameraId: number) => {
+    // Clear any pending retry
+    if (retryTimeoutsRef.current[cameraId]) {
+      clearTimeout(retryTimeoutsRef.current[cameraId]);
+      delete retryTimeoutsRef.current[cameraId];
+    }
+
+    updateCameraState(cameraId, {
+      connectionStatus: 'idle',
+      retryCount: 0,
+      lastError: ''
+    });
+
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: 'stop_stream',
         cameraId,
       }));
       setActiveStreams(prev => ({ ...prev, [cameraId]: false }));
-      if (onLog) onLog(`Sent stop_stream to backend for Camera ${cameraId}`);
-    } else {
-      if (onLog) onLog(`WebSocket not connected - cannot stop Camera ${cameraId}.`);
+      if (onLog) onLog(`Stopped Camera ${cameraId} stream`);
     }
+  };
+
+  const resetCamera = (cameraId: number) => {
+    // Clear retry timeout
+    if (retryTimeoutsRef.current[cameraId]) {
+      clearTimeout(retryTimeoutsRef.current[cameraId]);
+      delete retryTimeoutsRef.current[cameraId];
+    }
+
+    // Reset state
+    updateCameraState(cameraId, {
+      retryCount: 0,
+      lastError: '',
+      connectionStatus: 'idle'
+    });
+
+    setActiveStreams(prev => ({ ...prev, [cameraId]: false }));
+    
+    if (onLog) onLog(`Reset Camera ${cameraId} - ready for manual restart`);
+    
+    toast({
+      title: "Camera Reset",
+      description: `Camera ${cameraId} has been reset and can be restarted manually`,
+    });
   };
 
   const handleMultipleCamerasSetup = (cameras: Array<{ id: number; name: string; url: string; }>) => {
@@ -207,6 +336,25 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     const name = cameraNames[cameraId] || `Camera ${cameraId}`;
     const isEditing = editingCamera === cameraId;
     const isEditingName = editingName === cameraId;
+    const cameraState = cameraStates[cameraId] || initializeCameraState(cameraId);
+
+    const getStatusColor = () => {
+      switch (cameraState.connectionStatus) {
+        case 'connected': return 'bg-green-500';
+        case 'connecting': return 'bg-yellow-500 animate-pulse';
+        case 'failed': return 'bg-red-500';
+        default: return 'bg-gray-500';
+      }
+    };
+
+    const getStatusText = () => {
+      if (isActive) return 'Live';
+      switch (cameraState.connectionStatus) {
+        case 'connecting': return 'Connecting...';
+        case 'failed': return `Failed (${cameraState.retryCount}/${MAX_RETRIES})`;
+        default: return 'Stopped';
+      }
+    };
 
     return (
       <div 
@@ -263,9 +411,10 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
                 </Button>
               </div>
             )}
-            {isActive && (
-              <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" title="Live" />
-            )}
+            <div className="flex items-center space-x-1">
+              <div className={`w-2 h-2 rounded-full ${getStatusColor()}`} />
+              <span className="text-xs text-gray-400">{getStatusText()}</span>
+            </div>
           </div>
           <div className="flex space-x-1">
             <Button
@@ -291,10 +440,21 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
                 variant="ghost"
                 size="sm"
                 onClick={() => url && startStream(cameraId, url)}
-                disabled={!url}
+                disabled={!url || cameraState.connectionStatus === 'connecting'}
                 className="h-6 w-6 p-0"
               >
                 <Play className="w-3 h-3" />
+              </Button>
+            )}
+            {cameraState.retryCount >= MAX_RETRIES && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => resetCamera(cameraId)}
+                className="h-6 w-6 p-0 text-orange-400"
+                title="Reset camera (exceeded max retries)"
+              >
+                <AlertTriangle className="w-3 h-3" />
               </Button>
             )}
           </div>
@@ -310,12 +470,12 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
               playsInline
               src={`/hls/camera_${cameraId}.m3u8`}
               onError={() => {
-                const errMsg = `Video error for camera ${cameraId} at ${new Date().toLocaleTimeString()}`;
+                const errMsg = `Video element error for Camera ${cameraId}`;
                 console.error(errMsg);
                 if (onLog) {
                   onLog(errMsg);
                 }
-                setActiveStreams(prev => ({ ...prev, [cameraId]: false }));
+                // Don't immediately set stream as inactive - let backend handle retries
               }}
             >
               <source src={`/hls/camera_${cameraId}.m3u8`} type="application/x-mpegURL" />
@@ -325,8 +485,16 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
               <div className="text-center">
                 <Camera className="w-8 h-8 mx-auto mb-2 text-gray-500" />
                 <p className="text-sm text-gray-400">
-                  {url ? 'Stream Stopped' : 'No URL Set'}
+                  {cameraState.connectionStatus === 'failed' && cameraState.lastError ? 
+                    `Error: ${cameraState.lastError}` :
+                    url ? `Stream ${cameraState.connectionStatus}` : 'No URL Set'
+                  }
                 </p>
+                {cameraState.retryCount >= MAX_RETRIES && (
+                  <p className="text-xs text-orange-400 mt-1">
+                    Max retries reached. Click ⚠️ to reset.
+                  </p>
+                )}
               </div>
             </div>
           )}
