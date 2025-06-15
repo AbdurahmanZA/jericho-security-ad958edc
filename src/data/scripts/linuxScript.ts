@@ -235,7 +235,4 @@ echo "SIP peers: sudo asterisk -rx 'sip show peers'"
 echo "=================================="
 
 echo "\\n🟢 HTTPS ACCESS: If you have a domain pointing to this server, update the DOMAIN variable in this script and rerun."
-echo "\\n🔄 VoIP is configured with G.729 codec support for efficient bandwidth usage."
-`
-
-```
+echo "\\n🔄 VoIP is configured with G.729 codec support for efficient bandwidth usage."`;
