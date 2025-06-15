@@ -304,7 +304,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
               autoPlay
               muted
               playsInline
-              src={`/hls/camera${cameraId}/stream.m3u8`}
+              src={`/hls/camera_${cameraId}.m3u8`}
               onError={() => {
                 const errMsg = `Video error for camera ${cameraId} at ${new Date().toLocaleTimeString()}`;
                 console.error(errMsg);
@@ -314,7 +314,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
                 setActiveStreams(prev => ({ ...prev, [cameraId]: false }));
               }}
             >
-              <source src={`/hls/camera${cameraId}/stream.m3u8`} type="application/x-mpegURL" />
+              <source src={`/hls/camera_${cameraId}.m3u8`} type="application/x-mpegURL" />
             </video>
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-gray-700">
