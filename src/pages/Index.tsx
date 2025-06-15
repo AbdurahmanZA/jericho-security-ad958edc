@@ -44,11 +44,17 @@ const Index = () => {
   const totalPages = Math.ceil(TOTAL_CAMERAS / layout);
 
   // Move addDebugLog to the component top-level so it's accessible everywhere in Index
-  const addDebugLog = (msg: string) => {
+  const addDebugLog = (msg: string, category: string = 'SYSTEM') => {
+    // Filter logs to focus on streams and important events
+    const relevantCategories = ['STREAM', 'CAMERA', 'ERROR', 'CONNECTION'];
+    if (!relevantCategories.includes(category)) {
+      return; // Skip logging irrelevant messages
+    }
+
     const timestamp = new Date().toLocaleTimeString();
-    const detailedMsg = `[${timestamp}] ${msg}`;
+    const detailedMsg = `[${timestamp}] [${category}] ${msg}`;
     console.log(detailedMsg);
-    setDebugLogs(prev => [detailedMsg, ...prev].slice(0, 100));
+    setDebugLogs(prev => [detailedMsg, ...prev].slice(0, 50)); // Keep fewer logs, focus on recent
   };
 
   const copyLogsToClipboard = async () => {
@@ -57,7 +63,7 @@ const Index = () => {
       await navigator.clipboard.writeText(logsText);
       toast({
         title: "Logs Copied",
-        description: "Debug logs copied to clipboard",
+        description: "RTSP stream logs copied to clipboard",
       });
     } catch (error) {
       toast({
@@ -69,18 +75,20 @@ const Index = () => {
   };
 
   useEffect(() => {
-    // Initialize WebSocket connection
+    // Initialize WebSocket connection with minimal logging
     const connectWebSocket = () => {
       const currentAttempt = connectionAttempts + 1;
       setConnectionAttempts(currentAttempt);
       
       try {
-        addDebugLog(`WebSocket connection attempt #${currentAttempt} to ws://localhost:3001`);
+        if (currentAttempt === 1) {
+          addDebugLog('Attempting to connect to WebSocket server for live monitoring', 'CONNECTION');
+        }
         wsRef.current = new WebSocket('ws://localhost:3001');
         
         wsRef.current.onopen = () => {
-          addDebugLog('WebSocket connection established successfully');
-          setConnectionAttempts(0); // Reset on successful connection
+          addDebugLog('Live monitoring connection established', 'CONNECTION');
+          setConnectionAttempts(0);
           toast({
             title: "System Connected",
             description: "Real-time monitoring active",
@@ -90,11 +98,11 @@ const Index = () => {
         wsRef.current.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            addDebugLog(`WebSocket message received: ${JSON.stringify(data)}`);
             
             if (data.type === 'motion') {
               setMotionEvents(prev => [data, ...prev.slice(0, 14)]);
               setSystemStatus(prev => ({ ...prev, totalEvents: prev.totalEvents + 1 }));
+              addDebugLog(`Motion detected on Camera ${data.camera} (${data.severity} severity)`, 'CAMERA');
               
               toast({
                 title: "Motion Detected",
@@ -103,37 +111,42 @@ const Index = () => {
               });
             } else if (data.type === 'status') {
               setSystemStatus(data.status);
+            } else if (data.type === 'stream_error') {
+              addDebugLog(`Stream error on Camera ${data.camera}: ${data.error}`, 'ERROR');
+            } else if (data.type === 'stream_connected') {
+              addDebugLog(`Stream connected successfully for Camera ${data.camera}`, 'STREAM');
+            } else if (data.type === 'stream_disconnected') {
+              addDebugLog(`Stream disconnected for Camera ${data.camera}`, 'STREAM');
             }
           } catch (parseError) {
-            addDebugLog(`Failed to parse WebSocket message: ${event.data} - Error: ${parseError}`);
+            addDebugLog(`Failed to parse server message: ${parseError}`, 'ERROR');
           }
         };
         
         wsRef.current.onclose = (event) => {
-          const reason = event.reason || 'No reason provided';
-          const code = event.code || 'Unknown code';
-          addDebugLog(`WebSocket connection closed. Code: ${code}, Reason: ${reason}, Clean: ${event.wasClean}`);
-          addDebugLog(`This is normal if no backend server is running. Will retry in 5 seconds...`);
+          if (currentAttempt === 1) {
+            addDebugLog('Live monitoring disconnected (no backend server available)', 'CONNECTION');
+          }
           
-          // Only try to reconnect if we haven't made too many attempts
-          if (currentAttempt < 5) {
+          // Only try to reconnect a few times, then stop spamming
+          if (currentAttempt < 3) {
             setTimeout(connectWebSocket, 5000);
-          } else {
-            addDebugLog(`Max connection attempts (${currentAttempt}) reached. Stopping reconnection attempts.`);
+          } else if (currentAttempt === 3) {
+            addDebugLog('Stopped attempting WebSocket reconnection. This is normal without a backend server.', 'CONNECTION');
           }
         };
         
-        wsRef.current.onerror = (error) => {
-          addDebugLog(`WebSocket error occurred: ${JSON.stringify({
-            type: error.type,
-            target: error.target?.readyState,
-            timestamp: Date.now()
-          })}`);
-          addDebugLog(`This error is expected when no backend WebSocket server is available`);
+        wsRef.current.onerror = () => {
+          // Only log the first error to avoid spam
+          if (currentAttempt === 1) {
+            addDebugLog('WebSocket connection failed - this is expected without a backend server', 'CONNECTION');
+          }
         };
       } catch (error) {
-        addDebugLog(`Failed to create WebSocket connection: ${error.message || error}`);
-        if (currentAttempt < 5) {
+        if (currentAttempt === 1) {
+          addDebugLog(`WebSocket initialization failed: ${error.message}`, 'ERROR');
+        }
+        if (currentAttempt < 3) {
           setTimeout(connectWebSocket, 5000);
         }
       }
@@ -148,19 +161,18 @@ const Index = () => {
         const config = JSON.parse(savedConfig);
         setLayout(config.layout || 4);
         setIsFullscreen(config.fullscreen || false);
-        addDebugLog(`Loaded saved configuration: Layout ${config.layout}, Fullscreen: ${config.fullscreen}`);
+        addDebugLog(`Configuration loaded: ${config.layout} camera layout`, 'SYSTEM');
       } catch (error) {
-        addDebugLog(`Failed to parse saved configuration: ${error.message}`);
+        addDebugLog(`Failed to load saved configuration: ${error.message}`, 'ERROR');
       }
     }
 
     return () => {
       if (wsRef.current) {
-        addDebugLog('Closing WebSocket connection due to component unmount');
         wsRef.current.close();
       }
     };
-  }, [toast, addDebugLog]);
+  }, [toast]);
 
   // Save configuration whenever layout or fullscreen changes
   useEffect(() => {
@@ -176,7 +188,7 @@ const Index = () => {
     setLayout(newLayout);
     setIsFullscreen(false);
     setCurrentPage(1);
-    addDebugLog(`Layout changed to ${newLayout} cameras`);
+    addDebugLog(`Layout changed to ${newLayout} cameras`, 'SYSTEM');
   };
 
   const toggleFullscreen = () => {
@@ -185,7 +197,7 @@ const Index = () => {
       setLayout(12); // Show all cameras in fullscreen
     }
     setCurrentPage(1);
-    addDebugLog(`Fullscreen mode ${!isFullscreen ? 'enabled' : 'disabled'}`);
+    addDebugLog(`Fullscreen mode ${!isFullscreen ? 'enabled' : 'disabled'}`, 'SYSTEM');
   };
 
   const saveLayout = () => {
@@ -203,8 +215,10 @@ const Index = () => {
 
   const captureSnapshot = async (cameraId) => {
     try {
+      addDebugLog(`Capturing snapshot from Camera ${cameraId}`, 'CAMERA');
       const response = await fetch(`/api/snapshot/${cameraId}`, { method: 'POST' });
       if (response.ok) {
+        addDebugLog(`Snapshot captured successfully from Camera ${cameraId}`, 'CAMERA');
         toast({
           title: "Snapshot Captured",
           description: `Camera ${cameraId} image saved`,
@@ -213,6 +227,7 @@ const Index = () => {
         throw new Error('Failed to capture snapshot');
       }
     } catch (error) {
+      addDebugLog(`Snapshot failed for Camera ${cameraId}: ${error.message}`, 'ERROR');
       toast({
         title: "Snapshot Failed",
         description: error.message,
@@ -222,7 +237,10 @@ const Index = () => {
   };
 
   const handleMultipleCamerasSetup = (cameras: Array<{ id: number; name: string; url: string; }>) => {
-    // Handle the camera setup logic here
+    addDebugLog(`Multiple cameras setup initiated: ${cameras.length} cameras`, 'CAMERA');
+    cameras.forEach(camera => {
+      addDebugLog(`Camera ${camera.id} configured: ${camera.name} (${camera.url})`, 'STREAM');
+    });
     toast({
       title: "Multiple Cameras Added",
       description: `${cameras.length} cameras configured successfully`,
@@ -428,7 +446,7 @@ const Index = () => {
                   className="jericho-btn-primary border-jericho-light/30 text-white hover:jericho-accent-bg hover:text-jericho-primary font-semibold text-xs uppercase tracking-wide"
                 >
                   <ListIcon className="w-4 h-4 mr-2" />
-                  Debug Logs
+                  Stream Logs
                 </Button>
                 <ThemeToggle />
               </div>
@@ -441,7 +459,7 @@ const Index = () => {
                   isFullscreen={isFullscreen}
                   onSnapshot={captureSnapshot}
                   currentPage={currentPage}
-                  onLog={addDebugLog}
+                  onLog={(msg) => addDebugLog(msg, 'STREAM')}
                 />
               </div>
               {!isFullscreen && totalPages > 1 && (
@@ -475,16 +493,16 @@ const Index = () => {
           </SidebarInset>
         </div>
 
-        {/* Log Drawer */}
+        {/* Stream Logs Drawer */}
         <Drawer open={showLogDrawer} onOpenChange={setShowLogDrawer}>
           <DrawerContent>
             <DrawerHeader>
               <DrawerTitle>
-                <ListIcon className="inline w-5 h-5 mr-2" />
-                Debug Logs ({debugLogs.length})
+                <Video className="inline w-5 h-5 mr-2" />
+                RTSP Stream Logs ({debugLogs.length})
               </DrawerTitle>
               <DrawerDescription>
-                Detailed system logs including WebSocket connections, stream errors, and troubleshooting information.
+                Real-time logs for camera streams, connections, and errors. Focused on RTSP stream events.
               </DrawerDescription>
               <div className="flex items-center space-x-2 mt-2">
                 <Button
@@ -494,7 +512,7 @@ const Index = () => {
                   disabled={debugLogs.length === 0}
                 >
                   <Copy className="w-4 h-4 mr-2" />
-                  Copy All Logs
+                  Copy Stream Logs
                 </Button>
                 <Button
                   variant="outline"
@@ -505,16 +523,16 @@ const Index = () => {
                   Clear Logs
                 </Button>
                 <span className="text-xs text-muted-foreground">
-                  Connection attempts: {connectionAttempts}
+                  Active streams: {systemStatus.activeStreams}
                 </span>
               </div>
             </DrawerHeader>
             <div className="max-h-96 overflow-y-auto px-4 pb-4">
               {debugLogs.length === 0 ? (
                 <div className="text-center text-muted-foreground py-6">
-                  <AlertTriangle className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="font-medium">No debug logs yet</p>
-                  <p className="text-xs mt-1">WebSocket connection errors and stream issues will appear here.</p>
+                  <Video className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="font-medium">No stream logs yet</p>
+                  <p className="text-xs mt-1">RTSP stream events and camera errors will appear here.</p>
                 </div>
               ) : (
                 <ul className="space-y-2">
