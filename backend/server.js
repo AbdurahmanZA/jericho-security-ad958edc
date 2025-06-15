@@ -115,18 +115,28 @@ function startRTSPStream(cameraId, rtspUrl) {
 
   const outputPath = path.join(HLS_DIR, `camera_${cameraId}.m3u8`);
 
+  // Updated FFmpeg parameters optimized for Hikvision cameras
   const ffmpeg = spawn('ffmpeg', [
+    '-rtsp_transport', 'tcp',  // Use TCP for more stable connection
     '-i', rtspUrl,
     '-c:v', 'libx264',
     '-c:a', 'aac',
     '-f', 'hls',
-    '-hls_time', '2',
-    '-hls_list_size', '3',
-    '-hls_flags', 'delete_segments',
+    '-hls_time', '4',          // Increased segment time for better stability
+    '-hls_list_size', '5',     // Keep more segments
+    '-hls_flags', 'delete_segments+omit_endlist',
     '-preset', 'ultrafast',
     '-tune', 'zerolatency',
-    '-s', '640x480',
-    '-r', '15',
+    '-s', '960x576',           // Match your camera's native resolution
+    '-r', '12',                // Match your camera's native framerate
+    '-b:v', '500k',            // Set reasonable bitrate
+    '-maxrate', '600k',
+    '-bufsize', '1200k',
+    '-g', '24',                // GOP size = 2 * framerate
+    '-async', '1',             // Audio sync
+    '-vsync', '1',             // Video sync to handle timestamp issues
+    '-avoid_negative_ts', 'make_zero',  // Fix timestamp issues
+    '-fflags', '+genpts',      // Generate presentation timestamps
     outputPath
   ]);
 
@@ -169,7 +179,11 @@ function startRTSPStream(cameraId, rtspUrl) {
 
   ffmpeg.stderr.on('data', (data) => {
     const output = data.toString();
-    if (output.includes('error') || output.includes('Error')) {
+    // Log important FFmpeg output for debugging
+    if (output.includes('Stream mapping') || output.includes('Input #0') || output.includes('fps=')) {
+      console.log(`FFmpeg info for camera ${cameraId}:`, output.trim());
+    }
+    if (output.includes('error') || output.includes('Error') || output.includes('failed')) {
       console.error(`FFmpeg stderr for camera ${cameraId}:`, output);
     }
   });
