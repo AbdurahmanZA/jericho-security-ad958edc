@@ -40,28 +40,71 @@ npm install
 echo "Building application..."
 npm run build
 
+# Verify build completed successfully
+if [ ! -d "dist" ]; then
+    echo "ERROR: Build failed - dist directory not found"
+    exit 1
+fi
+
+if [ ! -f "dist/index.html" ]; then
+    echo "ERROR: Build failed - index.html not found in dist"
+    exit 1
+fi
+
+echo "Build verification successful. Files in dist:"
+ls -la dist/
+
 # Stop Apache
 sudo systemctl stop apache2
 
-# Clean and deploy
-sudo rm -rf /var/www/html/*
-sudo cp -r dist/* /var/www/html/
+# Backup existing Apache config
+sudo cp /etc/apache2/sites-available/000-default.conf /etc/apache2/sites-available/000-default.conf.backup || true
 
-# Create proper Apache configuration for SPA
-sudo tee /etc/apache2/sites-available/jericho-security.conf > /dev/null <<EOF
+# Clean Apache document root completely
+sudo rm -rf /var/www/html/*
+sudo rm -rf /var/www/html/.*  2>/dev/null || true
+
+# Copy built files with verbose output
+echo "Deploying files to /var/www/html..."
+sudo cp -rv dist/* /var/www/html/
+
+# Verify files were copied
+echo "Verifying deployment - files in /var/www/html:"
+sudo ls -la /var/www/html/
+
+# Create comprehensive Apache configuration for SPA
+sudo tee /etc/apache2/sites-available/jericho-security.conf > /dev/null <<'EOF'
 <VirtualHost *:80>
     DocumentRoot /var/www/html
     ServerName localhost
     
     # Enable rewrite module for SPA routing
     RewriteEngine On
+    
+    # Handle SPA routing - redirect all non-file requests to index.html
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^.*\$ /index.html [QSA,L]
+    RewriteCond %{REQUEST_URI} !^/favicon.ico$
+    RewriteRule ^.*$ /index.html [QSA,L]
     
-    # Set proper MIME types
+    # Serve static assets with proper MIME types
     <LocationMatch "\\.(css|js|map|json|ico|svg|png|jpg|jpeg|gif|woff|woff2|ttf|eot)$">
+        # Force correct MIME types
+        <IfModule mod_mime.c>
+            AddType text/css .css
+            AddType application/javascript .js
+            AddType application/json .json .map
+            AddType image/svg+xml .svg
+            AddType image/x-icon .ico
+            AddType font/woff .woff
+            AddType font/woff2 .woff2
+        </IfModule>
+        
+        # Cache static assets
         Header always set Cache-Control "public, max-age=31536000"
+        
+        # Prevent rewrite rules from applying to static assets
+        RewriteEngine Off
     </LocationMatch>
     
     # Security headers
@@ -80,17 +123,22 @@ sudo tee /etc/apache2/sites-available/jericho-security.conf > /dev/null <<EOF
         AddOutputFilterByType DEFLATE application/rss+xml
         AddOutputFilterByType DEFLATE application/javascript
         AddOutputFilterByType DEFLATE application/x-javascript
+        AddOutputFilterByType DEFLATE application/json
     </IfModule>
     
+    # Logging
     ErrorLog \${APACHE_LOG_DIR}/jericho-error.log
     CustomLog \${APACHE_LOG_DIR}/jericho-access.log combined
+    LogLevel info
 </VirtualHost>
 EOF
 
 # Enable required Apache modules
+echo "Enabling Apache modules..."
 sudo a2enmod rewrite
 sudo a2enmod headers
 sudo a2enmod deflate
+sudo a2enmod mime
 
 # Disable default site and enable Jericho site
 sudo a2dissite 000-default
@@ -101,7 +149,13 @@ sudo chown -R www-data:www-data /var/www/html
 sudo chmod -R 755 /var/www/html
 
 # Test Apache configuration
+echo "Testing Apache configuration..."
 sudo apache2ctl configtest
+
+if [ $? -ne 0 ]; then
+    echo "Apache configuration test failed. Check the configuration."
+    exit 1
+fi
 
 # Start Apache
 sudo systemctl start apache2
@@ -110,18 +164,50 @@ sudo systemctl enable apache2
 # Configure firewall
 sudo ufw allow 'Apache Full'
 
+# Final verification
+echo "Final verification..."
+sleep 2
+
+# Check if Apache is running
+if sudo systemctl is-active --quiet apache2; then
+    echo "Apache is running successfully"
+else
+    echo "WARNING: Apache failed to start"
+    sudo systemctl status apache2
+fi
+
+# Check if files are accessible
+echo "Checking file accessibility..."
+if curl -f -s http://localhost/index.html > /dev/null; then
+    echo "✓ index.html is accessible"
+else
+    echo "✗ index.html is NOT accessible"
+fi
+
+# List actual files in web directory
+echo "Files actually deployed:"
+sudo find /var/www/html -type f -name "*.css" -o -name "*.js" -o -name "*.html" | head -10
+
 # Cleanup
 cd /
 rm -rf "$TEMP_DIR"
 
-echo "Installation complete!"
-echo "Access your JERICHO Security System at: http://localhost"
-echo "Or from network: http://\$(hostname -I | awk '{print \$1}')"
 echo ""
+echo "========================================"
+echo "Installation complete!"
+echo "========================================"
+echo "Access your JERICHO Security System at:"
+echo "- Local: http://localhost"
+echo "- Network: http://\$(hostname -I | awk '{print \$1}')"
+echo ""
+echo "TROUBLESHOOTING:"
 echo "If you see MIME type errors:"
-echo "1. Check that all files were copied: ls -la /var/www/html/"
-echo "2. Restart Apache: sudo systemctl restart apache2"
-echo "3. Check Apache error logs: sudo tail -f /var/log/apache2/jericho-error.log"
+echo "1. Check Apache error log: sudo tail -f /var/log/apache2/jericho-error.log"
+echo "2. Check Apache access log: sudo tail -f /var/log/apache2/jericho-access.log"
+echo "3. Verify files exist: ls -la /var/www/html/"
+echo "4. Test file accessibility: curl -I http://localhost/assets/"
+echo "5. Restart Apache: sudo systemctl restart apache2"
+echo "6. Check Apache modules: sudo apache2ctl -M | grep -E 'rewrite|mime|headers'"
 echo ""
 echo "For authentication issues during git clone:"
 echo "- Use personal access token instead of password"
