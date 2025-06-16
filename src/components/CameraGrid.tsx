@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -160,9 +159,6 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
 
   const getGridClasses = () => {
     const baseClasses = 'h-full';
-    if (isFullscreen) {
-      return `grid grid-cols-4 grid-rows-3 gap-1 ${baseClasses}`;
-    }
     
     switch (layout) {
       case 1:
@@ -373,7 +369,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     );
   };
 
-  const effectiveLayout = isFullscreen ? 12 : layout;
+  const effectiveLayout = layout;
   const camerasToShow = effectiveLayout;
   const startCameraId = (currentPage - 1) * effectiveLayout + 1;
 

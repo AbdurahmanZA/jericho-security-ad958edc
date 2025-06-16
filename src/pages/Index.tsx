@@ -345,7 +345,7 @@ const Index = () => {
                   <div className="flex items-center space-x-4 text-sm text-slate-400">
                     <span className="flex items-center space-x-2">
                       <Monitor className="w-4 h-4" />
-                      <span>Cameras: {isFullscreen ? '12' : layout}</span>
+                      <span>Cameras: {layout}</span>
                     </span>
                     <span className="flex items-center space-x-2">
                       <Activity className="w-4 h-4" />
