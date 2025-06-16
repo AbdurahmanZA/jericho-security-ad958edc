@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Camera, Play, Square, Image, Edit2, Check, X, AlertTriangle } from "lucide-react";
 import { CameraState } from "@/hooks/useCameraState";
-import { HLSPlayer } from "@/hooks/useCameraHLS";
 import { ResolutionSelector, ResolutionProfile } from "./ResolutionSelector";
+import { VideoPlayer } from "./VideoPlayer";
 
 interface CameraTileProps {
   cameraId: number;
@@ -60,21 +60,17 @@ export const CameraTile: React.FC<CameraTileProps> = ({
 
   const handleResolutionChange = (profile: ResolutionProfile) => {
     setResolutionProfile(profile);
-    // Save to localStorage for persistence
     localStorage.setItem(`camera-${cameraId}-resolution`, profile);
     
-    // If stream is active, restart with new profile
     if (isActive && url) {
       onLog?.(`Switching Camera ${cameraId} to ${profile} quality`);
       stopStream(cameraId);
-      // Small delay to ensure clean restart
       setTimeout(() => {
         startStream(cameraId, url);
       }, 500);
     }
   };
 
-  // Load saved resolution profile on mount
   React.useEffect(() => {
     const saved = localStorage.getItem(`camera-${cameraId}-resolution`) as ResolutionProfile;
     if (saved && ['low', 'medium', 'high'].includes(saved)) {
@@ -83,7 +79,7 @@ export const CameraTile: React.FC<CameraTileProps> = ({
   }, [cameraId]);
 
   const getStatusColor = () => {
-    if (isActive && cameraState.hlsAvailable) return "bg-green-500";
+    if (isActive && (cameraState.hlsAvailable || cameraState.connectionType === 'webrtc')) return "bg-green-500";
     if (isActive && !cameraState.hlsAvailable) return "bg-orange-500";
     switch (cameraState.connectionStatus) {
       case "connecting":
@@ -96,7 +92,8 @@ export const CameraTile: React.FC<CameraTileProps> = ({
   };
 
   const getStatusText = () => {
-    if (isActive && cameraState.hlsAvailable) return "Live";
+    if (isActive && cameraState.connectionType === 'webrtc') return "Live (WebRTC)";
+    if (isActive && cameraState.hlsAvailable) return "Live (HLS)";
     if (isActive && !cameraState.hlsAvailable) return "Converting...";
     switch (cameraState.connectionStatus) {
       case "connecting": return "Connecting...";
@@ -217,19 +214,17 @@ export const CameraTile: React.FC<CameraTileProps> = ({
       {/* Video Area */}
       <div className="flex-1 relative group">
         {isActive ? (
-          <video
-            ref={el => {
-              videoRefs.current[cameraId] = el;
+          <VideoPlayer
+            cameraId={cameraId}
+            isActive={isActive}
+            onLog={onLog}
+            updateCameraState={(id, updates) => {
+              // Update camera state with connection type info
+              if (typeof cameraState.updateCameraState === 'function') {
+                cameraState.updateCameraState(id, updates);
+              }
             }}
-            className="w-full h-full object-cover bg-black"
-            autoPlay
-            muted
-            playsInline
-            controls={false}
-            // Event handlers can be passed via props/hook if needed
-          >
-            Your browser does not support HLS video playback.
-          </video>
+          />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gray-700">
             <div className="text-center">

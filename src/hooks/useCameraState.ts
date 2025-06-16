@@ -7,6 +7,7 @@ export interface CameraState {
   connectionStatus: 'idle' | 'connecting' | 'connected' | 'failed';
   lastAttempt: number;
   hlsAvailable: boolean;
+  connectionType?: 'webrtc' | 'hls';
 }
 
 export const useCameraState = () => {
@@ -18,6 +19,7 @@ export const useCameraState = () => {
     connectionStatus: "idle",
     lastAttempt: 0,
     hlsAvailable: false,
+    connectionType: undefined,
   });
 
   const updateCameraState = (cameraId: number, updates: Partial<CameraState>) => {
