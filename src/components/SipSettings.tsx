@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +23,12 @@ interface SipConfig {
   enabled: boolean;
 }
 
+interface SipStatus {
+  running: boolean;
+  status: string;
+  uptime: string;
+}
+
 export const SipSettings: React.FC = () => {
   const [sipConfig, setSipConfig] = useState<SipConfig>({
     serverIp: '192.168.1.100',
@@ -32,46 +39,160 @@ export const SipSettings: React.FC = () => {
     realm: 'jericho.local',
     enabled: false
   });
-  const [isConnected, setIsConnected] = useState(false);
+  const [sipStatus, setSipStatus] = useState<SipStatus>({
+    running: false,
+    status: 'stopped',
+    uptime: 'Unknown'
+  });
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     loadSipConfig();
     checkAsteriskStatus();
+    
+    // Poll status every 10 seconds
+    const interval = setInterval(checkAsteriskStatus, 10000);
+    return () => clearInterval(interval);
   }, []);
 
-  const loadSipConfig = () => {
-    const saved = localStorage.getItem('jericho-sip-config');
-    if (saved) {
-      setSipConfig(JSON.parse(saved));
+  const loadSipConfig = async () => {
+    try {
+      const response = await fetch('/api/sip/config');
+      if (response.ok) {
+        const config = await response.json();
+        if (config) {
+          setSipConfig({
+            serverIp: config.server_ip || '192.168.1.100',
+            sipPort: config.sip_port?.toString() || '5060',
+            rtpPortStart: config.rtp_start?.toString() || '10000',
+            rtpPortEnd: config.rtp_end?.toString() || '20000',
+            codec: config.codec || 'gsm',
+            realm: config.realm || 'jericho.local',
+            enabled: Boolean(config.enabled)
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load SIP config:', error);
+      // Fallback to localStorage
+      const saved = localStorage.getItem('jericho-sip-config');
+      if (saved) {
+        setSipConfig(JSON.parse(saved));
+      }
     }
   };
 
-  const saveSipConfig = () => {
-    localStorage.setItem('jericho-sip-config', JSON.stringify(sipConfig));
-    toast({
-      title: "SIP Configuration Saved",
-      description: "Asterisk configuration has been updated",
-    });
+  const saveSipConfig = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/sip/config', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          serverIp: sipConfig.serverIp,
+          sipPort: parseInt(sipConfig.sipPort),
+          rtpPortStart: parseInt(sipConfig.rtpPortStart),
+          rtpPortEnd: parseInt(sipConfig.rtpPortEnd),
+          codec: sipConfig.codec,
+          realm: sipConfig.realm,
+          enabled: sipConfig.enabled
+        }),
+      });
+
+      if (response.ok) {
+        localStorage.setItem('jericho-sip-config', JSON.stringify(sipConfig));
+        toast({
+          title: "SIP Configuration Saved",
+          description: "Asterisk configuration has been updated",
+        });
+      } else {
+        throw new Error('Failed to save configuration');
+      }
+    } catch (error) {
+      console.error('Failed to save SIP config:', error);
+      toast({
+        title: "Save Failed",
+        description: "Could not save SIP configuration. Check backend connection.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const checkAsteriskStatus = () => {
-    // Simulate checking Asterisk status
-    setTimeout(() => {
-      setIsConnected(sipConfig.enabled);
-    }, 1000);
+  const checkAsteriskStatus = async () => {
+    try {
+      const response = await fetch('/api/sip/status');
+      if (response.ok) {
+        const status = await response.json();
+        setSipStatus(status);
+      }
+    } catch (error) {
+      console.error('Failed to check Asterisk status:', error);
+      setSipStatus({
+        running: false,
+        status: 'unknown',
+        uptime: 'Unknown'
+      });
+    }
   };
 
-  const toggleAsterisk = () => {
-    const newEnabled = !sipConfig.enabled;
-    setSipConfig(prev => ({ ...prev, enabled: newEnabled }));
-    setIsConnected(newEnabled);
-    
-    toast({
-      title: newEnabled ? "Asterisk Started" : "Asterisk Stopped",
-      description: newEnabled ? "SIP server is now running" : "SIP server has been stopped",
-      variant: newEnabled ? "default" : "destructive",
-    });
+  const toggleAsterisk = async () => {
+    setLoading(true);
+    try {
+      const endpoint = sipStatus.running ? '/api/sip/stop' : '/api/sip/start';
+      const response = await fetch(endpoint, { method: 'POST' });
+      
+      if (response.ok) {
+        const result = await response.json();
+        checkAsteriskStatus(); // Refresh status
+        
+        toast({
+          title: sipStatus.running ? "Asterisk Stopped" : "Asterisk Started",
+          description: sipStatus.running ? "SIP server has been stopped" : "SIP server is now running",
+          variant: sipStatus.running ? "destructive" : "default",
+        });
+      } else {
+        throw new Error('Failed to toggle Asterisk');
+      }
+    } catch (error) {
+      console.error('Failed to toggle Asterisk:', error);
+      toast({
+        title: "Operation Failed",
+        description: "Could not control Asterisk service. Check backend connection.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const reloadAsterisk = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/sip/reload', { method: 'POST' });
+      
+      if (response.ok) {
+        toast({
+          title: "Asterisk Reloaded",
+          description: "Configuration has been reloaded successfully",
+        });
+      } else {
+        throw new Error('Failed to reload Asterisk');
+      }
+    } catch (error) {
+      console.error('Failed to reload Asterisk:', error);
+      toast({
+        title: "Reload Failed",
+        description: "Could not reload Asterisk configuration",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const copyToClipboard = (text: string) => {
@@ -92,18 +213,28 @@ export const SipSettings: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center space-x-3">
-          <Badge variant={isConnected ? "default" : "secondary"} className="flex items-center space-x-1">
-            {isConnected ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-            <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+          <Badge variant={sipStatus.running ? "default" : "secondary"} className="flex items-center space-x-1">
+            {sipStatus.running ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+            <span>{sipStatus.running ? 'Running' : 'Stopped'}</span>
           </Badge>
           <Button
             onClick={toggleAsterisk}
-            variant={isConnected ? "destructive" : "default"}
+            disabled={loading}
+            variant={sipStatus.running ? "destructive" : "default"}
             className="jericho-btn-accent"
           >
             <Phone className="w-4 h-4 mr-2" />
-            {isConnected ? 'Stop Asterisk' : 'Start Asterisk'}
+            {loading ? 'Please wait...' : (sipStatus.running ? 'Stop Asterisk' : 'Start Asterisk')}
           </Button>
+          {sipStatus.running && (
+            <Button
+              onClick={reloadAsterisk}
+              disabled={loading}
+              variant="outline"
+            >
+              Reload Config
+            </Button>
+          )}
         </div>
       </div>
 
@@ -193,6 +324,15 @@ export const SipSettings: React.FC = () => {
               </div>
             </div>
 
+            {sipStatus.running && (
+              <div className="mb-4 p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
+                <div className="text-sm text-green-700 dark:text-green-300">
+                  <p><strong>Status:</strong> {sipStatus.status}</p>
+                  <p><strong>Uptime:</strong> {sipStatus.uptime}</p>
+                </div>
+              </div>
+            )}
+
             <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-4">
               <div className="flex items-start space-x-2">
                 <Info className="w-5 h-5 text-green-600 mt-0.5" />
@@ -206,9 +346,9 @@ export const SipSettings: React.FC = () => {
               </div>
             </div>
 
-            <Button onClick={saveSipConfig} className="jericho-btn-primary">
+            <Button onClick={saveSipConfig} disabled={loading} className="jericho-btn-primary">
               <Save className="w-4 h-4 mr-2" />
-              Save Configuration
+              {loading ? 'Saving...' : 'Save Configuration'}
             </Button>
           </Card>
         </TabsContent>

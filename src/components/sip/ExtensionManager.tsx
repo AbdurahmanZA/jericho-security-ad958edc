@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Copy, Phone, Settings, Eye, EyeOff } from 'lucide-react';
+import { Plus, Trash2, Copy, Phone, Settings, Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface Extension {
@@ -14,7 +14,7 @@ interface Extension {
   name: string;
   secret: string;
   enabled: boolean;
-  registered: boolean;
+  registered?: boolean;
   lastSeen?: string;
 }
 
@@ -32,60 +32,65 @@ export const ExtensionManager: React.FC<ExtensionManagerProps> = ({ sipConfig })
   const [extensions, setExtensions] = useState<Extension[]>([]);
   const [editingExtension, setEditingExtension] = useState<Extension | null>(null);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(false);
+  const [sipPeers, setSipPeers] = useState<any[]>([]);
   const { toast } = useToast();
 
   useEffect(() => {
     loadExtensions();
-    // Simulate checking extension status
-    const interval = setInterval(checkExtensionStatus, 5000);
+    loadSipPeers();
+    
+    // Poll SIP peers every 30 seconds
+    const interval = setInterval(loadSipPeers, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  const loadExtensions = () => {
-    const saved = localStorage.getItem('jericho-sip-extensions');
-    if (saved) {
-      setExtensions(JSON.parse(saved));
-    } else {
-      // Create default extensions
-      const defaultExtensions: Extension[] = [
-        {
-          id: '1001',
-          number: '1001',
-          name: 'Security Desk',
-          secret: generateSecret(),
-          enabled: true,
-          registered: false
-        },
-        {
-          id: '1002',
-          number: '1002',
-          name: 'Emergency Line',
-          secret: generateSecret(),
-          enabled: true,
-          registered: false
-        }
-      ];
-      setExtensions(defaultExtensions);
-      localStorage.setItem('jericho-sip-extensions', JSON.stringify(defaultExtensions));
+  const loadExtensions = async () => {
+    try {
+      const response = await fetch('/api/sip/extensions');
+      if (response.ok) {
+        const data = await response.json();
+        setExtensions(data.map(ext => ({
+          id: ext.id?.toString() || ext.number,
+          number: ext.number,
+          name: ext.name,
+          secret: ext.secret,
+          enabled: Boolean(ext.enabled)
+        })));
+      } else {
+        throw new Error('Failed to load extensions');
+      }
+    } catch (error) {
+      console.error('Failed to load extensions:', error);
+      // Fallback to localStorage
+      const saved = localStorage.getItem('jericho-sip-extensions');
+      if (saved) {
+        setExtensions(JSON.parse(saved));
+      }
     }
   };
 
-  const saveExtensions = (newExtensions: Extension[]) => {
-    setExtensions(newExtensions);
-    localStorage.setItem('jericho-sip-extensions', JSON.stringify(newExtensions));
+  const loadSipPeers = async () => {
+    try {
+      const response = await fetch('/api/sip/peers');
+      if (response.ok) {
+        const peers = await response.json();
+        setSipPeers(peers);
+        
+        // Update extension registration status
+        setExtensions(prev => prev.map(ext => ({
+          ...ext,
+          registered: peers.some(peer => peer.name === ext.number && peer.status === 'OK'),
+          lastSeen: peers.find(peer => peer.name === ext.number)?.lastSeen || ext.lastSeen
+        })));
+      }
+    } catch (error) {
+      console.error('Failed to load SIP peers:', error);
+    }
   };
 
   const generateSecret = () => {
     return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-  };
-
-  const checkExtensionStatus = () => {
-    // Simulate random registration status
-    setExtensions(prev => prev.map(ext => ({
-      ...ext,
-      registered: Math.random() > 0.7,
-      lastSeen: ext.registered ? new Date().toLocaleTimeString() : ext.lastSeen
-    })));
   };
 
   const createNewExtension = () => {
@@ -100,7 +105,7 @@ export const ExtensionManager: React.FC<ExtensionManagerProps> = ({ sipConfig })
     setEditingExtension(newExt);
   };
 
-  const saveExtension = () => {
+  const saveExtension = async () => {
     if (!editingExtension || !editingExtension.number || !editingExtension.name) {
       toast({
         title: "Missing Information",
@@ -110,32 +115,75 @@ export const ExtensionManager: React.FC<ExtensionManagerProps> = ({ sipConfig })
       return;
     }
 
-    const existingIndex = extensions.findIndex(e => e.id === editingExtension.id);
-    let updatedExtensions;
-    
-    if (existingIndex >= 0) {
-      updatedExtensions = extensions.map(e => e.id === editingExtension.id ? editingExtension : e);
-    } else {
-      updatedExtensions = [...extensions, editingExtension];
+    setLoading(true);
+    try {
+      const isUpdate = extensions.some(e => e.id === editingExtension.id);
+      const endpoint = isUpdate ? `/api/sip/extensions/${editingExtension.id}` : '/api/sip/extensions';
+      const method = isUpdate ? 'PUT' : 'POST';
+
+      const response = await fetch(endpoint, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          number: editingExtension.number,
+          name: editingExtension.name,
+          secret: editingExtension.secret,
+          enabled: editingExtension.enabled
+        }),
+      });
+
+      if (response.ok) {
+        await loadExtensions(); // Reload from server
+        setEditingExtension(null);
+        
+        toast({
+          title: "Extension Saved",
+          description: `Extension ${editingExtension.number} configured successfully`,
+        });
+      } else {
+        throw new Error('Failed to save extension');
+      }
+    } catch (error) {
+      console.error('Failed to save extension:', error);
+      toast({
+        title: "Save Failed",
+        description: "Could not save extension. Check backend connection.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
-    
-    saveExtensions(updatedExtensions);
-    setEditingExtension(null);
-    
-    toast({
-      title: "Extension Saved",
-      description: `Extension ${editingExtension.number} configured successfully`,
-    });
   };
 
-  const deleteExtension = (extensionId: string) => {
-    const updatedExtensions = extensions.filter(e => e.id !== extensionId);
-    saveExtensions(updatedExtensions);
-    
-    toast({
-      title: "Extension Removed",
-      description: "Extension deleted successfully",
-    });
+  const deleteExtension = async (extensionId: string) => {
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/sip/extensions/${extensionId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        await loadExtensions(); // Reload from server
+        
+        toast({
+          title: "Extension Removed",
+          description: "Extension deleted successfully",
+        });
+      } else {
+        throw new Error('Failed to delete extension');
+      }
+    } catch (error) {
+      console.error('Failed to delete extension:', error);
+      toast({
+        title: "Delete Failed",
+        description: "Could not delete extension. Check backend connection.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const toggleSecret = (extensionId: string) => {
@@ -165,10 +213,16 @@ Display Name: ${extension.name}`;
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h4 className="font-semibold uppercase tracking-wide">Extension Management</h4>
-        <Button onClick={createNewExtension} className="jericho-btn-accent">
-          <Plus className="w-4 h-4 mr-2" />
-          Add Extension
-        </Button>
+        <div className="flex space-x-2">
+          <Button onClick={loadSipPeers} variant="outline" size="sm" disabled={loading}>
+            <RefreshCw className="w-3 h-3 mr-2" />
+            Refresh Status
+          </Button>
+          <Button onClick={createNewExtension} className="jericho-btn-accent" disabled={loading}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Extension
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -190,6 +244,7 @@ Display Name: ${extension.name}`;
                     variant="ghost"
                     size="sm"
                     onClick={() => setEditingExtension(extension)}
+                    disabled={loading}
                   >
                     <Settings className="w-3 h-3" />
                   </Button>
@@ -197,6 +252,7 @@ Display Name: ${extension.name}`;
                     variant="ghost"
                     size="sm"
                     onClick={() => deleteExtension(extension.id)}
+                    disabled={loading}
                     className="text-red-500 hover:text-red-600"
                   >
                     <Trash2 className="w-3 h-3" />
@@ -268,6 +324,7 @@ Display Name: ${extension.name}`;
                       number: e.target.value
                     })}
                     placeholder="1001"
+                    disabled={loading}
                   />
                 </div>
                 
@@ -281,6 +338,7 @@ Display Name: ${extension.name}`;
                       name: e.target.value
                     })}
                     placeholder="Security Desk"
+                    disabled={loading}
                   />
                 </div>
                 
@@ -295,6 +353,7 @@ Display Name: ${extension.name}`;
                         secret: e.target.value
                       })}
                       type={showSecrets[editingExtension.id] ? "text" : "password"}
+                      disabled={loading}
                     />
                     <Button
                       variant="outline"
@@ -302,6 +361,7 @@ Display Name: ${extension.name}`;
                         ...editingExtension,
                         secret: generateSecret()
                       })}
+                      disabled={loading}
                     >
                       Generate
                     </Button>
@@ -311,10 +371,10 @@ Display Name: ${extension.name}`;
                 <div className="flex space-x-2 pt-4">
                   <Button
                     onClick={saveExtension}
-                    disabled={!editingExtension.number || !editingExtension.name}
+                    disabled={!editingExtension.number || !editingExtension.name || loading}
                     className="flex-1 jericho-btn-primary"
                   >
-                    Save Extension
+                    {loading ? 'Saving...' : 'Save Extension'}
                   </Button>
                 </div>
                 
@@ -322,6 +382,7 @@ Display Name: ${extension.name}`;
                   variant="ghost"
                   onClick={() => setEditingExtension(null)}
                   className="w-full"
+                  disabled={loading}
                 >
                   Cancel
                 </Button>

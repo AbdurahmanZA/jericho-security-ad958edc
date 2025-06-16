@@ -1,45 +1,129 @@
 
 export const scriptMetadata = {
   linux: {
-    title: "Ubuntu 24.04 Complete Installation",
-    description: "Complete installation script with backend server, RTSP processing, WebSocket support, and camera management for Ubuntu 24.04 on ESXi.",
-    prerequisites: "Ubuntu 24.04 LTS with sudo privileges, internet connection, 4GB+ RAM, Git access to repository",
-    usage: "Save as install.sh, make executable: chmod +x install.sh, then run: ./install.sh",
+    name: 'Ubuntu 24.04 LTS',
+    description: 'Complete installation script for Ubuntu 24.04 with Apache, FFmpeg, and Asterisk VoIP',
+    icon: '🐧',
+    fileExtension: '.sh',
+    requirements: [
+      'Ubuntu 24.04 LTS or compatible',
+      'Sudo access',
+      'Internet connection',
+      'Minimum 4GB RAM',
+      'At least 10GB free disk space'
+    ],
     features: [
-      "Complete backend server with Node.js, Express, and WebSocket support",
-      "FFmpeg RTSP to HLS stream conversion for web browsers",
-      "SQLite database for camera configuration and motion events", 
-      "Real-time WebSocket communication for live updates",
-      "Camera snapshot capture and motion detection support",
-      "Apache reverse proxy configuration for API and streams",
-      "Systemd service for automatic backend startup",
-      "Firewall configuration and security hardening",
-      "Complete camera management API endpoints",
-      "HLS streaming support for web-based video playback"
+      'Frontend web application',
+      'Backend API server with WebSocket',
+      'Apache2 with SSL support',
+      'FFmpeg for video processing',
+      'Asterisk PBX with GSM/G.729 codecs',
+      'HLS streaming support',
+      'Emergency calling system'
+    ]
+  },
+  esxiUbuntu: {
+    name: 'ESXi Ubuntu 24.04',
+    description: 'Optimized installation for VMware ESXi with Ubuntu 24.04, including production-ready SIP/VoIP integration',
+    icon: '🏢',
+    fileExtension: '.sh',
+    requirements: [
+      'VMware ESXi 6.5+ or vSphere',
+      'Ubuntu 24.04 LTS VM (4GB+ RAM recommended)',
+      'Static IP address configured',
+      'Port forwarding for web access',
+      'Network access to camera systems'
+    ],
+    features: [
+      'Production-ready SIP/VoIP with real backend integration',
+      'Real-time Asterisk management via web interface',
+      'Database-backed extension management',
+      'Live call logging and monitoring',
+      'Emergency calling system with South African dialing',
+      'SSL certificate generation',
+      'Firewall configuration for enterprise networks',
+      'Comprehensive logging and monitoring'
     ]
   },
   windows: {
-    title: "Windows Installation", 
-    description: "Windows batch script that clones from your GitHub repository, builds, and deploys to IIS.",
-    prerequisites: "Git, Node.js, npm, IIS, Administrator privileges, Repository access",
-    usage: "Save as install.bat and run as Administrator"
+    name: 'Windows 10/11',
+    description: 'Installation guide for Windows systems using WSL2 and Docker',
+    icon: '🪟',
+    fileExtension: '.ps1',
+    requirements: [
+      'Windows 10/11 with WSL2',
+      'Docker Desktop',
+      'PowerShell (Admin)',
+      'At least 8GB RAM',
+      'Windows Subsystem for Linux enabled'
+    ],
+    features: [
+      'WSL2-based installation',
+      'Docker containerization',
+      'Windows-compatible paths',
+      'PowerShell automation',
+      'Cross-platform compatibility'
+    ]
   },
   macos: {
-    title: "macOS Installation",
-    description: "macOS installation script using Git clone from your repository, build process, and nginx deployment.",
-    prerequisites: "Xcode Command Line Tools, internet connection, Repository access",
-    usage: "Save as install.sh, make executable with chmod +x install.sh, then run ./install.sh"
+    name: 'macOS',
+    description: 'Installation script for macOS using Homebrew and native tools',
+    icon: '🍎',
+    fileExtension: '.sh',
+    requirements: [
+      'macOS 11+ (Big Sur or newer)',
+      'Homebrew package manager',
+      'Xcode Command Line Tools',
+      'Admin privileges',
+      'At least 8GB RAM'
+    ],
+    features: [
+      'Homebrew-based package management',
+      'Native macOS integration',
+      'FFmpeg with hardware acceleration',
+      'Local development setup',
+      'Terminal-based installation'
+    ]
   },
   docker: {
-    title: "Docker Installation",
-    description: "Simple Docker run command for immediate deployment.",
-    prerequisites: "Docker Engine",
-    ports: "80 (Web UI), 3001 (WebSocket/API)"
+    name: 'Docker',
+    description: 'Containerized deployment using Docker with multi-service architecture',
+    icon: '🐳',
+    fileExtension: '.dockerfile',
+    requirements: [
+      'Docker Engine 20.10+',
+      'Docker Compose V2',
+      'At least 4GB available RAM',
+      'Network access for image downloads',
+      'Linux host (recommended)'
+    ],
+    features: [
+      'Isolated container environment',
+      'Easy deployment and scaling',
+      'Volume persistence',
+      'Network isolation',
+      'Production-ready configuration'
+    ]
   },
-  compose: {
-    title: "Docker Compose",
-    description: "Minimal docker-compose.yml for production deployment.",
-    prerequisites: "Docker, Docker Compose", 
-    usage: "Save as docker-compose.yml, then run docker-compose up -d"
+  dockerCompose: {
+    name: 'Docker Compose',
+    description: 'Multi-container setup with separate services for frontend, backend, and database',
+    icon: '🐙',
+    fileExtension: '.yml',
+    requirements: [
+      'Docker Compose V2',
+      'Docker Engine 20.10+',
+      'Available ports: 80, 443, 3001, 5060',
+      'Persistent storage for data',
+      'Network connectivity'
+    ],
+    features: [
+      'Multi-service architecture',
+      'Service orchestration',
+      'Volume management',
+      'Network configuration',
+      'Environment variable management',
+      'Health checks and restart policies'
+    ]
   }
 };

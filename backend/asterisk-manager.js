@@ -1,4 +1,3 @@
-
 const { spawn, exec } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
@@ -135,6 +134,62 @@ class AsteriskManager {
       this.db.run('DELETE FROM sip_extensions WHERE id = ?', [id], function(err) {
         if (err) reject(err);
         else resolve({ deleted: this.changes > 0 });
+      });
+    });
+  }
+
+  async getCallLogs(limit = 100) {
+    return new Promise((resolve, reject) => {
+      this.db.all('SELECT * FROM call_logs ORDER BY start_time DESC LIMIT ?', [limit], (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  async logCall(fromExtension, toNumber, startTime, endTime, status) {
+    return new Promise((resolve, reject) => {
+      const duration = endTime ? Math.floor((new Date(endTime) - new Date(startTime)) / 1000) : 0;
+      
+      this.db.run(`INSERT INTO call_logs (from_extension, to_number, start_time, end_time, duration, status) 
+                   VALUES (?, ?, ?, ?, ?, ?)`,
+        [fromExtension, toNumber, startTime, endTime, duration, status],
+        function(err) {
+          if (err) reject(err);
+          else resolve({ id: this.lastID, fromExtension, toNumber, startTime, endTime, duration, status });
+        }
+      );
+    });
+  }
+
+  async makeEmergencyCall(extension, emergencyNumber, message = 'Security Alert') {
+    return new Promise((resolve, reject) => {
+      if (!this.asteriskRunning) {
+        reject(new Error('Asterisk is not running'));
+        return;
+      }
+
+      // Originate call through Asterisk
+      const command = `channel originate SIP/${extension} extension ${emergencyNumber}@emergencies`;
+      
+      exec(`sudo asterisk -rx "${command}"`, (error, stdout, stderr) => {
+        if (error) {
+          console.error('Error making emergency call:', error);
+          reject(error);
+          return;
+        }
+
+        // Log the emergency call
+        this.logCall(extension, emergencyNumber, new Date().toISOString(), null, 'emergency');
+        
+        console.log('Emergency call initiated:', stdout);
+        resolve({ 
+          status: 'initiated', 
+          from: extension, 
+          to: emergencyNumber,
+          message: message,
+          output: stdout 
+        });
       });
     });
   }
