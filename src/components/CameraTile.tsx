@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Camera, Play, Square, Image, Edit2, Check, X, AlertTriangle } from "lucide-react";
 import { CameraState } from "@/hooks/useCameraState";
 import { HLSPlayer } from "@/hooks/useCameraHLS";
+import { ResolutionSelector, ResolutionProfile } from "./ResolutionSelector";
 
 interface CameraTileProps {
   cameraId: number;
@@ -55,6 +56,32 @@ export const CameraTile: React.FC<CameraTileProps> = ({
   onLog,
   videoRefs,
 }) => {
+  const [resolutionProfile, setResolutionProfile] = React.useState<ResolutionProfile>('medium');
+
+  const handleResolutionChange = (profile: ResolutionProfile) => {
+    setResolutionProfile(profile);
+    // Save to localStorage for persistence
+    localStorage.setItem(`camera-${cameraId}-resolution`, profile);
+    
+    // If stream is active, restart with new profile
+    if (isActive && url) {
+      onLog?.(`Switching Camera ${cameraId} to ${profile} quality`);
+      stopStream(cameraId);
+      // Small delay to ensure clean restart
+      setTimeout(() => {
+        startStream(cameraId, url);
+      }, 500);
+    }
+  };
+
+  // Load saved resolution profile on mount
+  React.useEffect(() => {
+    const saved = localStorage.getItem(`camera-${cameraId}-resolution`) as ResolutionProfile;
+    if (saved && ['low', 'medium', 'high'].includes(saved)) {
+      setResolutionProfile(saved);
+    }
+  }, [cameraId]);
+
   const getStatusColor = () => {
     if (isActive && cameraState.hlsAvailable) return "bg-green-500";
     if (isActive && !cameraState.hlsAvailable) return "bg-orange-500";
@@ -139,6 +166,11 @@ export const CameraTile: React.FC<CameraTileProps> = ({
           </div>
         </div>
         <div className="flex space-x-1">
+          <ResolutionSelector
+            currentProfile={resolutionProfile}
+            onProfileChange={handleResolutionChange}
+            disabled={!url}
+          />
           <Button
             variant="ghost"
             size="sm"
