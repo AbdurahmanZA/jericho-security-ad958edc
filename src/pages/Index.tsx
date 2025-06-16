@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -285,7 +286,7 @@ const Index = () => {
                     variant={isFullscreen ? "secondary" : "outline"}
                     size="sm"
                     onClick={() => setIsFullscreen(!isFullscreen)}
-                    className="text-white border-slate-600 hover:bg-slate-700"
+                    className="bg-jericho-primary text-white border-jericho-primary hover:bg-jericho-dark-teal"
                   >
                     {isFullscreen ? (
                       <>
@@ -342,7 +343,7 @@ const Index = () => {
                       variant="outline"
                       size="sm"
                       onClick={() => setStreamLogsOpen(true)}
-                      className="text-white border-slate-600 hover:bg-slate-700"
+                      className="bg-jericho-primary text-white border-jericho-primary hover:bg-jericho-dark-teal"
                     >
                       Stream Logs ({logs.length})
                     </Button>
@@ -350,7 +351,7 @@ const Index = () => {
                       variant="outline"
                       size="sm"
                       onClick={() => setBackendLogsOpen(true)}
-                      className="text-white border-slate-600 hover:bg-slate-700"
+                      className="bg-jericho-primary text-white border-jericho-primary hover:bg-jericho-dark-teal"
                     >
                       Backend Logs ({backendLogs.length})
                     </Button>
