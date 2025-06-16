@@ -13,9 +13,8 @@ export const useWebRTC = (): WebRTCPlayer => {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
 
   const connectWebRTCSignaling = useCallback(() => {
-    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsHost = window.location.host;
-    const wsUrl = `${wsProtocol}//${wsHost}/api/ws`;
+    // Fixed WebSocket URL for WebRTC signaling
+    const wsUrl = `ws://localhost:3001/api/ws`;
 
     console.log('Connecting to WebRTC signaling server:', wsUrl);
 
@@ -32,7 +31,6 @@ export const useWebRTC = (): WebRTCPlayer => {
     ws.onclose = () => {
       console.log('WebRTC signaling disconnected');
       setWsConnection(null);
-      // Reconnect after 3 seconds
       reconnectTimeoutRef.current = setTimeout(connectWebRTCSignaling, 3000);
     };
 
@@ -67,7 +65,6 @@ export const useWebRTC = (): WebRTCPlayer => {
     }
 
     try {
-      // Clean up any existing connection
       if (webrtcConnectionsRef.current[cameraId]) {
         webrtcConnectionsRef.current[cameraId].close();
         delete webrtcConnectionsRef.current[cameraId];
@@ -75,8 +72,8 @@ export const useWebRTC = (): WebRTCPlayer => {
 
       onLog?.(`Setting up WebRTC for Camera ${cameraId}`);
 
-      // Check if WebRTC stream is available
-      const response = await fetch(`/api/webrtc/streams/${cameraId}/start`, { method: 'POST' });
+      // Use correct backend URL for WebRTC streams
+      const response = await fetch(`http://localhost:3001/api/webrtc/streams/${cameraId}/start`, { method: 'POST' });
       if (!response.ok) {
         onLog?.(`WebRTC stream not available for Camera ${cameraId}`);
         return false;
@@ -91,7 +88,6 @@ export const useWebRTC = (): WebRTCPlayer => {
 
       webrtcConnectionsRef.current[cameraId] = pc;
 
-      // Handle incoming stream
       pc.ontrack = (event) => {
         onLog?.(`WebRTC stream received for Camera ${cameraId}`);
         if (event.streams && event.streams[0]) {
@@ -102,7 +98,6 @@ export const useWebRTC = (): WebRTCPlayer => {
         }
       };
 
-      // Handle connection state changes
       pc.onconnectionstatechange = () => {
         onLog?.(`WebRTC connection state for Camera ${cameraId}: ${pc.connectionState}`);
         
@@ -111,7 +106,6 @@ export const useWebRTC = (): WebRTCPlayer => {
         }
       };
 
-      // Handle ICE candidates
       pc.onicecandidate = (event) => {
         if (event.candidate && wsConnection.readyState === WebSocket.OPEN) {
           wsConnection.send(JSON.stringify({
@@ -122,14 +116,11 @@ export const useWebRTC = (): WebRTCPlayer => {
         }
       };
 
-      // Add transceiver for receiving video
       pc.addTransceiver('video', { direction: 'recvonly' });
 
-      // Create offer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Send offer via WebSocket
       const message = {
         type: 'offer',
         cameraId: cameraId,
@@ -138,7 +129,6 @@ export const useWebRTC = (): WebRTCPlayer => {
 
       wsConnection.send(JSON.stringify(message));
 
-      // Wait for answer
       return new Promise((resolve) => {
         const timeout = setTimeout(() => {
           onLog?.(`WebRTC setup timeout for Camera ${cameraId}`);
@@ -189,7 +179,6 @@ export const useWebRTC = (): WebRTCPlayer => {
 
   useEffect(() => {
     return () => {
-      // Cleanup all connections on unmount
       Object.keys(webrtcConnectionsRef.current).forEach(id => {
         webrtcConnectionsRef.current[Number(id)]?.close();
       });

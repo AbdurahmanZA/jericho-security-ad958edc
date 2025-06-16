@@ -71,7 +71,8 @@ const Index = () => {
 
   const fetchBackendLogs = async () => {
     try {
-      const response = await fetch('/api/logs');
+      // Use correct backend port for API calls
+      const response = await fetch('http://localhost:3001/api/logs');
       if (response.ok) {
         const logs = await response.json();
         setBackendLogs(logs);
@@ -83,7 +84,8 @@ const Index = () => {
 
   const fetchSystemStatus = async () => {
     try {
-      const response = await fetch('/api/status');
+      // Use correct backend port for API calls
+      const response = await fetch('http://localhost:3001/api/status');
       if (response.ok) {
         const status = await response.json();
         setSystemStatus(prev => ({
@@ -209,10 +211,8 @@ const Index = () => {
           addBackendLog('[CONNECTION] Attempting WebSocket connection to backend server');
         }
         
-        // Use current domain and protocol for WebSocket connection
-        const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const wsHost = window.location.host;
-        const wsUrl = `${wsProtocol}//${wsHost}/ws/`;
+        // Fixed WebSocket URL - use correct backend port and protocol
+        const wsUrl = `ws://localhost:3001/ws/`;
 
         wsRef.current = new WebSocket(wsUrl);
 
@@ -379,7 +379,7 @@ const Index = () => {
   const captureSnapshot = async (cameraId) => {
     try {
       addDebugLog(`Capturing snapshot from Camera ${cameraId}`, 'CAMERA');
-      const response = await fetch(`/api/snapshot/${cameraId}`, { method: 'POST' });
+      const response = await fetch(`http://localhost:3001/api/snapshot/${cameraId}`, { method: 'POST' });
       if (response.ok) {
         addDebugLog(`Snapshot captured successfully from Camera ${cameraId}`, 'CAMERA');
         toast({
