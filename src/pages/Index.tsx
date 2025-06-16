@@ -2,12 +2,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { CameraGrid } from '@/components/CameraGrid';
-import { CameraLayoutControls } from '@/components/CameraLayoutControls';
-import { StreamLogsDrawer } from '@/components/StreamLogsDrawer';
-import { BackendLogsDrawer } from '@/components/BackendLogsDrawer';
-import { QuickActions } from '@/components/QuickActions';
-import { SystemStatusBox } from '@/components/SystemStatusBox';
+import CameraGrid from '@/components/CameraGrid';
+import CameraLayoutControls from '@/components/CameraLayoutControls';
+import StreamLogsDrawer from '@/components/StreamLogsDrawer';
+import BackendLogsDrawer from '@/components/BackendLogsDrawer';
+import QuickActions from '@/components/QuickActions';
+import SystemStatusBox from '@/components/SystemStatusBox';
 import { 
   Monitor, 
   Activity, 
