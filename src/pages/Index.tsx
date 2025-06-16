@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import CameraGrid from '@/components/CameraGrid';
+import { CameraGrid } from '@/components/CameraGrid';
 import CameraLayoutControls from '@/components/CameraLayoutControls';
 import StreamLogsDrawer from '@/components/StreamLogsDrawer';
 import BackendLogsDrawer from '@/components/BackendLogsDrawer';
@@ -30,6 +30,8 @@ const Index = () => {
     activeStreams: 0,
     lastHeartbeat: null as Date | null
   });
+  const [streamLogsOpen, setStreamLogsOpen] = useState(false);
+  const [backendLogsOpen, setBackendLogsOpen] = useState(false);
   
   const { toast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
@@ -161,6 +163,47 @@ const Index = () => {
     addLog(`Switched to page ${page}`);
   };
 
+  const copyLogs = (logType: 'stream' | 'backend') => {
+    const logsToCopy = logType === 'stream' ? logs : backendLogs;
+    navigator.clipboard.writeText(logsToCopy.join('\n'));
+    toast({
+      title: "Logs Copied",
+      description: `${logType === 'stream' ? 'Stream' : 'Backend'} logs copied to clipboard`,
+    });
+  };
+
+  const downloadLogs = (logType: 'stream' | 'backend') => {
+    const logsToCopy = logType === 'stream' ? logs : backendLogs;
+    const blob = new Blob([logsToCopy.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `jericho-${logType}-logs-${new Date().toISOString()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const clearLogs = (logType: 'stream' | 'backend') => {
+    if (logType === 'stream') {
+      setLogs([]);
+    } else {
+      setBackendLogs([]);
+    }
+    toast({
+      title: "Logs Cleared",
+      description: `${logType === 'stream' ? 'Stream' : 'Backend'} logs cleared`,
+    });
+  };
+
+  const systemStatus = {
+    uptime: "2h 34m",
+    activeStreams: backendStatus.activeStreams,
+    totalEvents: 0,
+    hikvisionConnections: 0
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       {/* Header */}
@@ -185,12 +228,14 @@ const Index = () => {
 
             <div className="flex items-center space-x-4">
               <SystemStatusBox 
-                isConnected={backendStatus.isConnected}
-                activeStreams={backendStatus.activeStreams}
-                lastHeartbeat={backendStatus.lastHeartbeat}
+                systemStatus={systemStatus}
               />
               
-              <QuickActions onSnapshot={handleSnapshot} />
+              <QuickActions 
+                onShowSnapshots={() => {}}
+                onShowHikvisionSetup={() => {}}
+                onShowSettings={() => {}}
+              />
               
               <Button
                 variant={isFullscreen ? "secondary" : "outline"}
@@ -221,10 +266,9 @@ const Index = () => {
           <div className="px-6 py-3">
             <CameraLayoutControls
               layout={layout}
+              isFullscreen={isFullscreen}
               onLayoutChange={setLayout}
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={handlePageChange}
+              onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
             />
           </div>
         </div>
@@ -263,12 +307,45 @@ const Index = () => {
             </div>
             
             <div className="flex space-x-2">
-              <StreamLogsDrawer logs={logs} />
-              <BackendLogsDrawer logs={backendLogs} />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setStreamLogsOpen(true)}
+                className="text-white border-slate-600 hover:bg-slate-700"
+              >
+                Stream Logs ({logs.length})
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBackendLogsOpen(true)}
+                className="text-white border-slate-600 hover:bg-slate-700"
+              >
+                Backend Logs ({backendLogs.length})
+              </Button>
             </div>
           </div>
         </div>
       </div>
+
+      <StreamLogsDrawer 
+        open={streamLogsOpen}
+        onOpenChange={setStreamLogsOpen}
+        logs={logs}
+        onCopy={() => copyLogs('stream')}
+        onDownload={() => downloadLogs('stream')}
+        onClear={() => clearLogs('stream')}
+        activeStreams={backendStatus.activeStreams}
+      />
+      
+      <BackendLogsDrawer 
+        open={backendLogsOpen}
+        onOpenChange={setBackendLogsOpen}
+        logs={backendLogs}
+        onCopy={() => copyLogs('backend')}
+        onDownload={() => downloadLogs('backend')}
+        onClear={() => clearLogs('backend')}
+      />
     </div>
   );
 };
