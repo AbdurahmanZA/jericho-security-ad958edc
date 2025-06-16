@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Terminal, Download } from 'lucide-react';
+import { Terminal, Download, Server } from 'lucide-react';
 import ScriptDisplay from '@/components/ScriptDisplay';
 import InstallationNotes from '@/components/InstallationNotes';
 import { installationScripts, scriptMetadata } from '@/data/installationScripts';
@@ -17,10 +17,14 @@ const InstallationScripts = () => {
       </div>
 
       <Tabs defaultValue="linux" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="linux" className="flex items-center space-x-2">
             <Terminal className="w-4 h-4" />
             <span>Linux</span>
+          </TabsTrigger>
+          <TabsTrigger value="esxiUbuntu" className="flex items-center space-x-2">
+            <Server className="w-4 h-4" />
+            <span>ESXi</span>
           </TabsTrigger>
           <TabsTrigger value="windows" className="flex items-center space-x-2">
             <Terminal className="w-4 h-4" />
@@ -44,12 +48,23 @@ const InstallationScripts = () => {
           <ScriptDisplay
             scriptKey="linux"
             script={installationScripts.linux}
-            title={scriptMetadata.linux.title}
+            title={scriptMetadata.linux.name}
             description={scriptMetadata.linux.description}
             icon="terminal"
-            prerequisites={scriptMetadata.linux.prerequisites}
-            usage={scriptMetadata.linux.usage}
+            prerequisites={scriptMetadata.linux.requirements.join(', ')}
             features={scriptMetadata.linux.features}
+          />
+        </TabsContent>
+
+        <TabsContent value="esxiUbuntu">
+          <ScriptDisplay
+            scriptKey="esxiUbuntu"
+            script={installationScripts.esxiUbuntu}
+            title={scriptMetadata.esxiUbuntu.name}
+            description={scriptMetadata.esxiUbuntu.description}
+            icon="terminal"
+            prerequisites={scriptMetadata.esxiUbuntu.requirements.join(', ')}
+            features={scriptMetadata.esxiUbuntu.features}
           />
         </TabsContent>
 
@@ -57,11 +72,11 @@ const InstallationScripts = () => {
           <ScriptDisplay
             scriptKey="windows"
             script={installationScripts.windows}
-            title={scriptMetadata.windows.title}
+            title={scriptMetadata.windows.name}
             description={scriptMetadata.windows.description}
             icon="terminal"
-            prerequisites={scriptMetadata.windows.prerequisites}
-            usage={scriptMetadata.windows.usage}
+            prerequisites={scriptMetadata.windows.requirements.join(', ')}
+            features={scriptMetadata.windows.features}
           />
         </TabsContent>
 
@@ -69,11 +84,11 @@ const InstallationScripts = () => {
           <ScriptDisplay
             scriptKey="macos"
             script={installationScripts.macos}
-            title={scriptMetadata.macos.title}
+            title={scriptMetadata.macos.name}
             description={scriptMetadata.macos.description}
             icon="terminal"
-            prerequisites={scriptMetadata.macos.prerequisites}
-            usage={scriptMetadata.macos.usage}
+            prerequisites={scriptMetadata.macos.requirements.join(', ')}
+            features={scriptMetadata.macos.features}
           />
         </TabsContent>
 
@@ -81,23 +96,23 @@ const InstallationScripts = () => {
           <ScriptDisplay
             scriptKey="docker"
             script={installationScripts.docker}
-            title={scriptMetadata.docker.title}
+            title={scriptMetadata.docker.name}
             description={scriptMetadata.docker.description}
             icon="download"
-            prerequisites={scriptMetadata.docker.prerequisites}
-            ports={scriptMetadata.docker.ports}
+            prerequisites={scriptMetadata.docker.requirements.join(', ')}
+            features={scriptMetadata.docker.features}
           />
         </TabsContent>
 
         <TabsContent value="compose">
           <ScriptDisplay
-            scriptKey="compose"
+            scriptKey="dockerCompose"
             script={installationScripts.dockerCompose}
-            title={scriptMetadata.compose.title}
-            description={scriptMetadata.compose.description}
+            title={scriptMetadata.dockerCompose.name}
+            description={scriptMetadata.dockerCompose.description}
             icon="download"
-            prerequisites={scriptMetadata.compose.prerequisites}
-            usage={scriptMetadata.compose.usage}
+            prerequisites={scriptMetadata.dockerCompose.requirements.join(', ')}
+            features={scriptMetadata.dockerCompose.features}
           />
         </TabsContent>
       </Tabs>
