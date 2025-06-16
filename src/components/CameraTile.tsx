@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +29,7 @@ interface CameraTileProps {
   MAX_RETRIES: number;
   onLog?: (msg: string) => void;
   videoRefs: React.MutableRefObject<Record<number, HTMLVideoElement | null>>;
+  updateCameraState: (id: number, updates: Partial<CameraState>) => void;
 }
 
 export const CameraTile: React.FC<CameraTileProps> = ({
@@ -55,6 +55,7 @@ export const CameraTile: React.FC<CameraTileProps> = ({
   MAX_RETRIES,
   onLog,
   videoRefs,
+  updateCameraState,
 }) => {
   const [resolutionProfile, setResolutionProfile] = React.useState<ResolutionProfile>('medium');
 
@@ -218,12 +219,7 @@ export const CameraTile: React.FC<CameraTileProps> = ({
             cameraId={cameraId}
             isActive={isActive}
             onLog={onLog}
-            updateCameraState={(id, updates) => {
-              // Update camera state with connection type info
-              if (typeof cameraState.updateCameraState === 'function') {
-                cameraState.updateCameraState(id, updates);
-              }
-            }}
+            updateCameraState={updateCameraState}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gray-700">
