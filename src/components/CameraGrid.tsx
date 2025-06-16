@@ -395,6 +395,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
         MAX_RETRIES={MAX_RETRIES}
         onLog={onLog}
         videoRefs={videoRefs}
+        updateCameraState={updateCameraState}
       />
     );
   };
