@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -722,85 +723,88 @@ export const HikvisionSettings: React.FC = () => {
                   <p className="text-sm">No RTSP cameras configured</p>
                 </div>
               ) : (
-                cameras.filter(c => c.type === 'rtsp').map((camera) => (
-                  <div key={camera.id} className="p-4 border border-border rounded-lg bg-card">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-2">
-                        <Camera className="w-4 h-4" />
-                        <span className="font-semibold">{camera.name}</span>
-                        {camera.connected ? (
-                          <Wifi className="w-3 h-3 text-green-500" />
-                        ) : (
-                          <WifiOff className="w-3 h-3 text-red-500" />
-                        )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteCamera(camera.id)}
-                        className="text-red-500 hover:text-red-600 h-6 w-6 p-0"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    </div>
-                    
-                    <div className="space-y-2 mb-3">
-                      <div className="flex items-center space-x-2">
-                        {getCameraTypeBadge(camera.type)}
-                        <Badge variant={streamStatus.variant} className="text-xs flex items-center space-x-1">
-                          {streamStatus.icon}
-                          <span>{streamStatus.canStream ? 'Stream Ready' : 'Config Only'}</span>
-                        </Badge>
-                      </div>
-                      {camera.type === 'rtsp' && (
-                        <div className="text-xs text-muted-foreground">
-                          {camera.ip}:{camera.port}
+                cameras.filter(c => c.type === 'rtsp').map((camera) => {
+                  const streamStatus = getStreamingStatus(camera);
+                  return (
+                    <div key={camera.id} className="p-4 border border-border rounded-lg bg-card">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-2">
+                          <Camera className="w-4 h-4" />
+                          <span className="font-semibold">{camera.name}</span>
+                          {camera.connected ? (
+                            <Wifi className="w-3 h-3 text-green-500" />
+                          ) : (
+                            <WifiOff className="w-3 h-3 text-red-500" />
+                          )}
                         </div>
-                      )}
-                      {camera.cloudDeviceId && (
-                        <div className="text-xs text-muted-foreground">
-                          Device: {camera.cloudDeviceId}
-                        </div>
-                      )}
-                      <div className="text-xs text-muted-foreground flex items-center space-x-1">
-                        {streamStatus.icon}
-                        <span>{streamStatus.status}</span>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          checked={camera.enabled}
-                          onCheckedChange={(checked) => 
-                            toggleCameraEnabled(camera.id, checked as boolean)
-                          }
-                        />
-                        <span className="text-xs font-medium">Monitor</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteCamera(camera.id)}
+                          className="text-red-500 hover:text-red-600 h-6 w-6 p-0"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
                       </div>
                       
-                      <Badge variant={camera.connected ? "default" : "secondary"} className="text-xs">
-                        {camera.connected ? 'Online' : 'Offline'}
-                      </Badge>
-                    </div>
-                    
-                    <div>
-                      <div className="text-xs text-muted-foreground mb-1">Events:</div>
-                      <div className="flex flex-wrap gap-1">
-                        {camera.events.slice(0, 2).map(event => (
-                          <Badge key={event} variant="outline" className="text-xs">
-                            {eventTypes.find(e => e.id === event)?.label.split(' ')[0] || event}
+                      <div className="space-y-2 mb-3">
+                        <div className="flex items-center space-x-2">
+                          {getCameraTypeBadge(camera.type)}
+                          <Badge variant={streamStatus.variant} className="text-xs flex items-center space-x-1">
+                            {streamStatus.icon}
+                            <span>{streamStatus.canStream ? 'Stream Ready' : 'Config Only'}</span>
                           </Badge>
-                        ))}
-                        {camera.events.length > 2 && (
-                          <Badge variant="outline" className="text-xs">
-                            +{camera.events.length - 2}
-                          </Badge>
+                        </div>
+                        {camera.type === 'rtsp' && (
+                          <div className="text-xs text-muted-foreground">
+                            {camera.ip}:{camera.port}
+                          </div>
                         )}
+                        {camera.cloudDeviceId && (
+                          <div className="text-xs text-muted-foreground">
+                            Device: {camera.cloudDeviceId}
+                          </div>
+                        )}
+                        <div className="text-xs text-muted-foreground flex items-center space-x-1">
+                          {streamStatus.icon}
+                          <span>{streamStatus.status}</span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            checked={camera.enabled}
+                            onCheckedChange={(checked) => 
+                              toggleCameraEnabled(camera.id, checked as boolean)
+                            }
+                          />
+                          <span className="text-xs font-medium">Monitor</span>
+                        </div>
+                        
+                        <Badge variant={camera.connected ? "default" : "secondary"} className="text-xs">
+                          {camera.connected ? 'Online' : 'Offline'}
+                        </Badge>
+                      </div>
+                      
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Events:</div>
+                        <div className="flex flex-wrap gap-1">
+                          {camera.events.slice(0, 2).map(event => (
+                            <Badge key={event} variant="outline" className="text-xs">
+                              {eventTypes.find(e => e.id === event)?.label.split(' ')[0] || event}
+                            </Badge>
+                          ))}
+                          {camera.events.length > 2 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{camera.events.length - 2}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
