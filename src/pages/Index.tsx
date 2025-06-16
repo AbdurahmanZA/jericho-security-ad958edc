@@ -217,26 +217,6 @@ const Index = () => {
       <div className="min-h-screen flex w-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
         {!isFullscreen && (
           <Sidebar>
-            <SidebarHeader className="p-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 bg-slate-800 rounded-lg p-2">
-                  <img 
-                    src="/lovable-uploads/7cca0fa7-2e1b-4160-9134-844eadbfaf2d.png" 
-                    alt="Jericho Security Logo" 
-                    className="w-full h-full object-contain"
-                  />
-                </div>
-                <div>
-                  <h1 className="text-lg font-bold text-white tracking-tight">
-                    JERICHO
-                  </h1>
-                  <p className="text-xs text-slate-400">
-                    Security System
-                  </p>
-                </div>
-              </div>
-            </SidebarHeader>
-            
             <SidebarContent className="p-4 space-y-6">
               <SidebarGroup>
                 <SidebarGroupLabel>Camera Layout</SidebarGroupLabel>
