@@ -13,8 +13,8 @@ export const useWebRTC = (): WebRTCPlayer => {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
 
   const connectWebRTCSignaling = useCallback(() => {
-    // Fixed WebSocket URL for WebRTC signaling
-    const wsUrl = `ws://localhost:3001/api/ws`;
+    // WebSocket URL for WebRTC signaling using HTTPS
+    const wsUrl = `wss://192.168.0.138/api/ws`;
 
     console.log('Connecting to WebRTC signaling server:', wsUrl);
 
@@ -73,7 +73,7 @@ export const useWebRTC = (): WebRTCPlayer => {
       onLog?.(`Setting up WebRTC for Camera ${cameraId}`);
 
       // Use correct backend URL for WebRTC streams
-      const response = await fetch(`http://localhost:3001/api/webrtc/streams/${cameraId}/start`, { method: 'POST' });
+      const response = await fetch(`https://192.168.0.138/api/webrtc/streams/${cameraId}/start`, { method: 'POST' });
       if (!response.ok) {
         onLog?.(`WebRTC stream not available for Camera ${cameraId}`);
         return false;

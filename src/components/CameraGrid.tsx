@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -75,7 +76,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   useEffect(() => {
     let ws: WebSocket;
     function connectWebSocket() {
-      const wsUrl = `ws://localhost:3001/ws/`;
+      const wsUrl = `wss://192.168.0.138/ws/`;
 
       ws = new WebSocket(wsUrl);
       ws.onopen = () => {
