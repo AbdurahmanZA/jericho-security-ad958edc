@@ -1,11 +1,10 @@
-
 export const esxiUbuntuScript = `#!/bin/bash
 # JERICHO Security System - Complete ESXi Ubuntu 24.04 Installation
-# This script installs the complete system with real SIP/VoIP integration
+# This script installs the complete system with real SIP/VoIP integration and WebRTC
 
 set -e
 
-echo "Installing JERICHO Security System with Real SIP/VoIP Integration on ESXi Ubuntu..."
+echo "Installing JERICHO Security System with Real SIP/VoIP Integration and WebRTC on ESXi Ubuntu..."
 
 # System information
 echo "System Information:"
@@ -56,6 +55,19 @@ if [ -f asterisk-g729-1.5.0-x86_64.tar.bz2 ]; then
   echo "G.729 codec installed successfully"
 else
   echo "Using built-in GSM codec (recommended for emergency communications)"
+fi
+
+# Install go2rtc for WebRTC streaming
+echo "Installing go2rtc WebRTC Media Server..."
+sudo mkdir -p /opt/go2rtc
+cd /tmp
+wget -O go2rtc https://github.com/AlexxIT/go2rtc/releases/latest/download/go2rtc_linux_amd64 || echo "go2rtc download failed - WebRTC will use fallback"
+if [ -f go2rtc ]; then
+  sudo mv go2rtc /opt/go2rtc/
+  sudo chmod +x /opt/go2rtc/go2rtc
+  echo "go2rtc installed successfully"
+else
+  echo "go2rtc installation failed - continuing with HLS only"
 fi
 
 # Install Apache2 with SSL support
@@ -292,7 +304,7 @@ sudo touch /var/log/jericho/backend.log
 sudo touch /var/log/jericho/backend-error.log
 sudo chown www-data:www-data /var/log/jericho/*.log
 
-# Configure firewall
+# Configure firewall with go2rtc ports
 echo "Configuring firewall..."
 sudo ufw allow 80/tcp comment "HTTP"
 sudo ufw allow 443/tcp comment "HTTPS" 
@@ -300,6 +312,15 @@ sudo ufw allow 3001/tcp comment "Jericho Backend"
 sudo ufw allow 5060/udp comment "SIP"
 sudo ufw allow 5060/tcp comment "SIP"
 sudo ufw allow 10000:20000/udp comment "RTP"
+sudo ufw allow 1984/tcp comment "go2rtc API"
+sudo ufw allow 8554/tcp comment "go2rtc RTSP"
+sudo ufw allow 8555/tcp comment "go2rtc WebRTC"
+
+# Enable go2rtc if installed
+if [ -f /opt/go2rtc/go2rtc ]; then
+  sudo systemctl enable go2rtc
+  sudo systemctl start go2rtc
+fi
 
 # Enable and start services
 echo "Starting services..."
@@ -338,25 +359,44 @@ echo "   SIP Port:  5060"
 echo "   RTP Range: 10000-20000"
 echo "   Codec:     GSM (default), G.729 (if available)"
 echo ""
+echo "🎥 WebRTC Configuration:"
+if [ -f /opt/go2rtc/go2rtc ]; then
+echo "   go2rtc API: http://\${IP_ADDRESS}:1984"
+echo "   RTSP Port:  8554"
+echo "   WebRTC Port: 8555"
+echo "   Status:     ✅ Installed"
+else
+echo "   Status:     ❌ Not installed (HLS fallback available)"
+fi
+echo ""
 echo "📊 Service Status:"
 sudo systemctl is-active --quiet apache2 && echo "   ✅ Apache2: Running" || echo "   ❌ Apache2: Failed"
 sudo systemctl is-active --quiet jericho-backend && echo "   ✅ Backend: Running" || echo "   ❌ Backend: Failed"
 sudo systemctl is-active --quiet asterisk && echo "   ✅ Asterisk: Running" || echo "   ❌ Asterisk: Stopped (normal - start from web interface)"
+if [ -f /opt/go2rtc/go2rtc ]; then
+  sudo systemctl is-active --quiet go2rtc && echo "   ✅ go2rtc: Running" || echo "   ❌ go2rtc: Failed"
+fi
 
 echo ""
 echo "📋 Next Steps:"
 echo "1. Open web browser to http://\${IP_ADDRESS}"
-echo "2. Go to Settings > SIP/VoIP"
-echo "3. Configure SIP settings (use server IP: \${IP_ADDRESS})"
-echo "4. Create extensions for your security team"
-echo "5. Start Asterisk from the web interface"
+echo "2. Go to Settings > Streams to configure camera RTSP URLs"
+echo "3. Configure go2rtc streams at http://\${IP_ADDRESS}:1984 (if installed)"
+echo "4. Go to Settings > SIP/VoIP to configure phone system"
+echo "5. Test WebRTC low-latency streaming"
 echo "6. Test SIP registration with softphone"
+echo ""
+echo "🎯 WebRTC Setup (if go2rtc installed):"
+echo "   1. Edit /opt/go2rtc/go2rtc.yaml with your camera URLs"
+echo "   2. Restart: sudo systemctl restart go2rtc"
+echo "   3. Test WebRTC at: http://\${IP_ADDRESS}:1984"
+echo "   4. Configure camera streams in web interface"
 echo ""
 echo "🔍 Monitoring:"
 echo "   Backend logs:  sudo journalctl -u jericho-backend -f"
+echo "   go2rtc logs:   sudo journalctl -u go2rtc -f"
 echo "   Apache logs:   sudo tail -f /var/log/apache2/jericho_access.log"
 echo "   Asterisk CLI:  sudo asterisk -r"
-echo "   System status: sudo systemctl status jericho-backend"
 echo ""
 echo "📞 VoIP Testing:"
 echo "   SIP peers:     sudo asterisk -rx 'sip show peers'"
@@ -376,5 +416,5 @@ echo "   - Use strong passwords for web interface"
 echo "   - Consider VPN access for remote management"
 echo ""
 echo "=================================="
-echo "🟢 Installation Complete! System Ready for Production Use"
+echo "🟢 Full JERICHO System Ready with WebRTC + SIP/VoIP!"
 echo "=================================="`;

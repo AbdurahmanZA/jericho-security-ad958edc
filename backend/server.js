@@ -1,4 +1,3 @@
-
 const express = require('express');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
@@ -7,6 +6,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const WebSocket = require('ws');
 const http = require('http');
+const WebRTCSignalingServer = require('./webrtc-signaling');
 
 // Import route modules
 const { initializeSipRoutes } = require('./routes/sip');
@@ -14,6 +14,9 @@ const { initializeSipRoutes } = require('./routes/sip');
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
+
+// Initialize WebRTC signaling server
+const webrtcSignaling = new WebRTCSignalingServer(server);
 
 // Middleware
 app.use(cors());
@@ -52,6 +55,16 @@ db.serialize(() => {
     status TEXT DEFAULT 'stopped',
     last_update DATETIME DEFAULT CURRENT_TIMESTAMP,
     error_message TEXT,
+    FOREIGN KEY (camera_id) REFERENCES cameras (id)
+  )`);
+
+  // Add WebRTC streams table
+  db.run(`CREATE TABLE IF NOT EXISTS webrtc_streams (
+    id INTEGER PRIMARY KEY,
+    camera_id INTEGER,
+    stream_url TEXT,
+    enabled BOOLEAN DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (camera_id) REFERENCES cameras (id)
   )`);
 });
@@ -158,6 +171,51 @@ app.delete('/api/cameras/:id', (req, res) => {
       return;
     }
     res.json({ deleted: this.changes > 0 });
+  });
+});
+
+// Add WebRTC stream management
+app.post('/api/webrtc/streams/:cameraId/start', (req, res) => {
+  const cameraId = req.params.cameraId;
+  
+  db.get('SELECT * FROM cameras WHERE id = ?', [cameraId], (err, camera) => {
+    if (err || !camera) {
+      res.status(404).json({ error: 'Camera not found' });
+      return;
+    }
+
+    // Store WebRTC stream info
+    db.run('INSERT OR REPLACE INTO webrtc_streams (camera_id, stream_url, enabled) VALUES (?, ?, ?)',
+      [cameraId, camera.url, 1]);
+
+    broadcast({
+      type: 'webrtc_stream_ready',
+      cameraId: parseInt(cameraId),
+      timestamp: new Date().toISOString()
+    });
+
+    res.json({ 
+      status: 'webrtc_ready', 
+      cameraId: parseInt(cameraId),
+      signaling_url: '/api/ws'
+    });
+  });
+});
+
+app.get('/api/webrtc/streams/:cameraId/status', (req, res) => {
+  const cameraId = req.params.cameraId;
+  
+  db.get('SELECT * FROM webrtc_streams WHERE camera_id = ?', [cameraId], (err, stream) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    
+    res.json({
+      cameraId: parseInt(cameraId),
+      webrtc_available: !!stream && stream.enabled,
+      stream_url: stream?.stream_url || null
+    });
   });
 });
 

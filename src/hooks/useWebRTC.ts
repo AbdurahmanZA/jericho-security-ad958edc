@@ -1,5 +1,5 @@
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 
 export interface WebRTCPlayer {
   setupWebRTCPlayer: (cameraId: number, videoElement: HTMLVideoElement, onLog?: (msg: string) => void) => Promise<boolean>;
@@ -10,43 +10,53 @@ export interface WebRTCPlayer {
 export const useWebRTC = (): WebRTCPlayer => {
   const webrtcConnectionsRef = useRef<Record<number, RTCPeerConnection>>({});
   const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
 
-  useEffect(() => {
-    // Connect to go2rtc WebRTC signaling
-    const connectWebRTCSignaling = () => {
-      const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsHost = window.location.host;
-      const wsUrl = `${wsProtocol}//${wsHost}/api/ws`;
+  const connectWebRTCSignaling = useCallback(() => {
+    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsHost = window.location.host;
+    const wsUrl = `${wsProtocol}//${wsHost}/api/ws`;
 
-      const ws = new WebSocket(wsUrl);
-      
-      ws.onopen = () => {
-        console.log('WebRTC signaling connected');
-        setWsConnection(ws);
-      };
+    console.log('Connecting to WebRTC signaling server:', wsUrl);
 
-      ws.onclose = () => {
-        console.log('WebRTC signaling disconnected');
-        setWsConnection(null);
-        // Reconnect after 5 seconds
-        setTimeout(connectWebRTCSignaling, 5000);
-      };
-
-      ws.onerror = () => {
-        console.log('WebRTC signaling error');
-      };
-    };
-
-    connectWebRTCSignaling();
-
-    return () => {
-      if (wsConnection) {
-        wsConnection.close();
+    const ws = new WebSocket(wsUrl);
+    
+    ws.onopen = () => {
+      console.log('WebRTC signaling connected');
+      setWsConnection(ws);
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
       }
     };
+
+    ws.onclose = () => {
+      console.log('WebRTC signaling disconnected');
+      setWsConnection(null);
+      // Reconnect after 3 seconds
+      reconnectTimeoutRef.current = setTimeout(connectWebRTCSignaling, 3000);
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebRTC signaling error:', error);
+    };
+
+    return ws;
   }, []);
 
-  const setupWebRTCPlayer = async (
+  useEffect(() => {
+    const ws = connectWebRTCSignaling();
+
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (ws) {
+        ws.close();
+      }
+    };
+  }, [connectWebRTCSignaling]);
+
+  const setupWebRTCPlayer = useCallback(async (
     cameraId: number,
     videoElement: HTMLVideoElement,
     onLog?: (msg: string) => void
@@ -65,8 +75,18 @@ export const useWebRTC = (): WebRTCPlayer => {
 
       onLog?.(`Setting up WebRTC for Camera ${cameraId}`);
 
+      // Check if WebRTC stream is available
+      const response = await fetch(`/api/webrtc/streams/${cameraId}/start`, { method: 'POST' });
+      if (!response.ok) {
+        onLog?.(`WebRTC stream not available for Camera ${cameraId}`);
+        return false;
+      }
+
       const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
       });
 
       webrtcConnectionsRef.current[cameraId] = pc;
@@ -74,10 +94,12 @@ export const useWebRTC = (): WebRTCPlayer => {
       // Handle incoming stream
       pc.ontrack = (event) => {
         onLog?.(`WebRTC stream received for Camera ${cameraId}`);
-        videoElement.srcObject = event.streams[0];
-        videoElement.play().catch(error => {
-          onLog?.(`WebRTC autoplay failed for Camera ${cameraId}: ${error.message}`);
-        });
+        if (event.streams && event.streams[0]) {
+          videoElement.srcObject = event.streams[0];
+          videoElement.play().catch(error => {
+            onLog?.(`WebRTC autoplay failed for Camera ${cameraId}: ${error.message}`);
+          });
+        }
       };
 
       // Handle connection state changes
@@ -89,6 +111,17 @@ export const useWebRTC = (): WebRTCPlayer => {
         }
       };
 
+      // Handle ICE candidates
+      pc.onicecandidate = (event) => {
+        if (event.candidate && wsConnection.readyState === WebSocket.OPEN) {
+          wsConnection.send(JSON.stringify({
+            type: 'ice-candidate',
+            cameraId: cameraId,
+            candidate: event.candidate
+          }));
+        }
+      };
+
       // Add transceiver for receiving video
       pc.addTransceiver('video', { direction: 'recvonly' });
 
@@ -96,36 +129,39 @@ export const useWebRTC = (): WebRTCPlayer => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Send offer via WebSocket to go2rtc
+      // Send offer via WebSocket
       const message = {
-        type: 'webrtc',
-        value: offer.sdp
+        type: 'offer',
+        cameraId: cameraId,
+        sdp: offer.sdp
       };
 
       wsConnection.send(JSON.stringify(message));
 
-      // Wait for answer (this would need proper WebSocket message handling)
+      // Wait for answer
       return new Promise((resolve) => {
         const timeout = setTimeout(() => {
           onLog?.(`WebRTC setup timeout for Camera ${cameraId}`);
+          cleanupWebRTCPlayer(cameraId, onLog);
           resolve(false);
         }, 10000);
 
         const handleMessage = (event: MessageEvent) => {
           try {
             const data = JSON.parse(event.data);
-            if (data.type === 'webrtc' && data.value) {
+            if (data.type === 'answer' && data.cameraId === cameraId) {
               pc.setRemoteDescription(new RTCSessionDescription({
                 type: 'answer',
-                sdp: data.value
+                sdp: data.sdp
               })).then(() => {
                 clearTimeout(timeout);
                 wsConnection.removeEventListener('message', handleMessage);
                 onLog?.(`WebRTC connected successfully for Camera ${cameraId}`);
                 resolve(true);
-              }).catch(() => {
+              }).catch((error) => {
                 clearTimeout(timeout);
                 wsConnection.removeEventListener('message', handleMessage);
+                onLog?.(`WebRTC answer failed for Camera ${cameraId}: ${error}`);
                 resolve(false);
               });
             }
@@ -138,18 +174,18 @@ export const useWebRTC = (): WebRTCPlayer => {
       });
 
     } catch (error) {
-      onLog?.(`WebRTC setup error for Camera ${cameraId}: ${error.message}`);
+      onLog?.(`WebRTC setup error for Camera ${cameraId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return false;
     }
-  };
+  }, [wsConnection]);
 
-  const cleanupWebRTCPlayer = (cameraId: number, onLog?: (msg: string) => void) => {
+  const cleanupWebRTCPlayer = useCallback((cameraId: number, onLog?: (msg: string) => void) => {
     if (webrtcConnectionsRef.current[cameraId]) {
       onLog?.(`Cleaning up WebRTC for Camera ${cameraId}`);
       webrtcConnectionsRef.current[cameraId].close();
       delete webrtcConnectionsRef.current[cameraId];
     }
-  };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -157,6 +193,9 @@ export const useWebRTC = (): WebRTCPlayer => {
       Object.keys(webrtcConnectionsRef.current).forEach(id => {
         webrtcConnectionsRef.current[Number(id)]?.close();
       });
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
     };
   }, []);
 
