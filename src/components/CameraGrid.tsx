@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,14 +17,6 @@ interface CameraGridProps {
   onLog?: (msg: string) => void;
 }
 
-interface CameraState {
-  retryCount: number;
-  lastError: string;
-  connectionStatus: 'idle' | 'connecting' | 'connected' | 'failed';
-  lastAttempt: number;
-  hlsAvailable: boolean;
-}
-
 export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, onSnapshot, currentPage = 1, onLog }) => {
   const [cameraUrls, setCameraUrls] = useState<Record<number, string>>({});
   const [cameraNames, setCameraNames] = useState<Record<number, string>>({});
@@ -40,20 +33,9 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   const MAX_RETRIES = 3;
   const RETRY_DELAY = 10000; // 10 seconds between retries
 
-  const initializeCameraState = (cameraId: number): CameraState => ({
-    retryCount: 0,
-    lastError: '',
-    connectionStatus: 'idle',
-    lastAttempt: 0,
-    hlsAvailable: false
-  });
-
-  const updateCameraState = (cameraId: number, updates: Partial<CameraState>) => {
-    setCameraStates(prev => ({
-      ...prev,
-      [cameraId]: { ...prev[cameraId] || initializeCameraState(cameraId), ...updates }
-    }));
-  };
+  // Use camera state and HLS hooks
+  const { cameraStates, updateCameraState, initializeCameraState } = useCameraState();
+  const { setupHLSPlayer, cleanupHLSPlayer, hlsInstancesRef } = useCameraHLS();
 
   // Check if HLS file exists
   const checkHLSAvailability = async (cameraId: number) => {
@@ -184,10 +166,9 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
       Object.values(retryTimeoutsRef.current).forEach(timeout => clearTimeout(timeout));
       // Clean up all HLS instances
       Object.keys(hlsInstancesRef.current).forEach(cameraId => {
-        cleanupHLSPlayer(parseInt(cameraId));
+        cleanupHLSPlayer(parseInt(cameraId), onLog);
       });
     };
-    // Avoid extra effect triggers (single establish)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -301,7 +282,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     }
 
     // Clean up HLS player first
-    cleanupHLSPlayer(cameraId);
+    cleanupHLSPlayer(cameraId, onLog);
 
     updateCameraState(cameraId, {
       connectionStatus: 'idle',
@@ -328,7 +309,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     }
 
     // Clean up HLS player
-    cleanupHLSPlayer(cameraId);
+    cleanupHLSPlayer(cameraId, onLog);
 
     // Reset state
     updateCameraState(cameraId, {
@@ -348,160 +329,6 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     });
   };
 
-  const setupHLSPlayer = (cameraId: number, videoElement: HTMLVideoElement) => {
-    if (!videoElement) {
-      if (onLog) onLog(`No video element found for Camera ${cameraId}`);
-      return;
-    }
-
-    // Clean up existing HLS instance
-    cleanupHLSPlayer(cameraId);
-
-    const hlsUrl = `/hls/camera_${cameraId}.m3u8`;
-    
-    if (onLog) onLog(`Setting up HLS player for Camera ${cameraId} with URL: ${hlsUrl}`);
-
-    if (Hls.isSupported()) {
-      if (onLog) onLog(`HLS.js is supported, creating new instance for Camera ${cameraId}`);
-      
-      const hls = new Hls({
-        enableWorker: false,
-        lowLatencyMode: true,
-        backBufferLength: 90,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
-        startLevel: -1,
-        capLevelToPlayerSize: true,
-        debug: false,
-      });
-
-      hlsInstancesRef.current[cameraId] = hls;
-
-      hls.loadSource(hlsUrl);
-      hls.attachMedia(videoElement);
-
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        if (onLog) onLog(`HLS manifest parsed for Camera ${cameraId}, attempting autoplay`);
-        updateCameraState(cameraId, { hlsAvailable: true });
-        
-        videoElement.play().then(() => {
-          if (onLog) onLog(`Video playback started for Camera ${cameraId}`);
-        }).catch(error => {
-          if (onLog) onLog(`Autoplay failed for Camera ${cameraId}: ${error.message}`);
-        });
-      });
-
-      hls.on(Hls.Events.ERROR, (event, data) => {
-        if (onLog) onLog(`HLS error for Camera ${cameraId}: ${data.type} - ${data.details} - Fatal: ${data.fatal}`);
-        
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              if (onLog) onLog(`Network error for Camera ${cameraId}, retrying...`);
-              setTimeout(() => {
-                if (hlsInstancesRef.current[cameraId]) {
-                  hlsInstancesRef.current[cameraId].startLoad();
-                }
-              }, 1000);
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              if (onLog) onLog(`Media error for Camera ${cameraId}, trying to recover...`);
-              setTimeout(() => {
-                if (hlsInstancesRef.current[cameraId]) {
-                  hlsInstancesRef.current[cameraId].recoverMediaError();
-                }
-              }, 1000);
-              break;
-            default:
-              if (onLog) onLog(`Fatal error for Camera ${cameraId}, destroying player`);
-              cleanupHLSPlayer(cameraId);
-              updateCameraState(cameraId, { 
-                hlsAvailable: false, 
-                lastError: `HLS Fatal Error: ${data.details}` 
-              });
-              break;
-          }
-        }
-      });
-
-      hls.on(Hls.Events.FRAG_LOADED, () => {
-        if (onLog) onLog(`HLS fragment loaded for Camera ${cameraId}`);
-      });
-
-    } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari native HLS support
-      if (onLog) onLog(`Using Safari native HLS support for Camera ${cameraId}`);
-      videoElement.src = hlsUrl;
-      
-      videoElement.addEventListener('loadedmetadata', () => {
-        if (onLog) onLog(`Safari HLS metadata loaded for Camera ${cameraId}`);
-        updateCameraState(cameraId, { hlsAvailable: true });
-        
-        videoElement.play().then(() => {
-          if (onLog) onLog(`Safari video playback started for Camera ${cameraId}`);
-        }).catch(error => {
-          if (onLog) onLog(`Safari autoplay failed for Camera ${cameraId}: ${error.message}`);
-        });
-      });
-    } else {
-      if (onLog) onLog(`HLS not supported for Camera ${cameraId}`);
-      updateCameraState(cameraId, { 
-        hlsAvailable: false, 
-        lastError: 'HLS not supported by browser' 
-      });
-    }
-  };
-
-  const cleanupHLSPlayer = (cameraId: number) => {
-    if (hlsInstancesRef.current[cameraId]) {
-      if (onLog) onLog(`Cleaning up HLS player for Camera ${cameraId}`);
-      hlsInstancesRef.current[cameraId].destroy();
-      delete hlsInstancesRef.current[cameraId];
-    }
-  };
-
-  const handleVideoError = (cameraId: number, error: any) => {
-    const videoElement = videoRefs.current[cameraId];
-    if (onLog) {
-      onLog(`Video element error for Camera ${cameraId}: ${error.type} - Code: ${error.target?.error?.code}`);
-    }
-    
-    updateCameraState(cameraId, {
-      lastError: `Video error: ${error.target?.error?.code || 'Unknown'}`,
-    });
-
-    // Try to recover by recreating the HLS player
-    if (activeStreams[cameraId] && videoElement) {
-      if (onLog) onLog(`Attempting to recover video for Camera ${cameraId}`);
-      setTimeout(() => {
-        setupHLSPlayer(cameraId, videoElement);
-      }, 2000);
-    }
-  };
-
-  const handleVideoCanPlay = (cameraId: number) => {
-    if (onLog) {
-      onLog(`Video element can play for Camera ${cameraId}`);
-    }
-    updateCameraState(cameraId, {
-      hlsAvailable: true,
-      lastError: ''
-    });
-  };
-
-  const handleMultipleCamerasSetup = (cameras: Array<{ id: number; name: string; url: string; }>) => {
-    const newUrls = { ...cameraUrls };
-    cameras.forEach(camera => {
-      newUrls[camera.id] = camera.url;
-    });
-    setCameraUrls(newUrls);
-    
-    toast({
-      title: "Multiple Cameras Added",
-      description: `${cameras.length} cameras configured successfully`,
-    });
-  };
-
   const handleNameSubmit = (cameraId: number) => {
     if (tempName.trim()) {
       setCameraNames(prev => ({ ...prev, [cameraId]: tempName.trim() }));
@@ -514,97 +341,63 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     setTempName('');
   };
 
-  // Use camera state and HLS hooks
-  const { cameraStates, updateCameraState: updateCameraStateHook, initializeCameraState: initializeCameraStateHook } = useCameraState();
-  const { setupHLSPlayer: setupHLSPlayerHook, cleanupHLSPlayer: cleanupHLSPlayerHook, hlsInstancesRef } = useCameraHLS();
+  // Setup HLS players when streams become active
+  useEffect(() => {
+    const cameraIds = Array.from({ length: isFullscreen ? 12 : layout }, (_, i) =>
+      ((currentPage - 1) * (isFullscreen ? 12 : layout)) + 1 + i
+    );
 
-// Replace local cameraStates with hook values
-// Pass hlsInstancesRef, setup/cleanup functions to child component and useEffect
-
-useEffect(() => {
-  // For all cameras to show:
-  const cameraIds = Array.from({ length: isFullscreen ? 12 : layout }, (_, i) =>
-    ((currentPage - 1) * (isFullscreen ? 12 : layout)) + 1 + i
-  );
-
-  cameraIds.forEach((cameraId) => {
-    const isActive = activeStreams[cameraId];
-    const videoEl = videoRefs.current[cameraId];
-    // If the stream is active and video element is present, setup once
-    if (isActive && videoEl && !hlsInstancesRef.current[cameraId]) {
-      setupHLSPlayerHook(cameraId, videoEl, onLog, updateCameraState);
-    }
-    // If the stream is not active, cleanup
-    if ((!isActive || !videoEl) && hlsInstancesRef.current[cameraId]) {
-      cleanupHLSPlayerHook(cameraId, onLog);
-    }
-  });
-
-  // On cleanup, if any streams deactivated or components unmounted, cleanup all HLS players
-  return () => {
     cameraIds.forEach((cameraId) => {
-      cleanupHLSPlayerHook(cameraId, onLog);
+      const isActive = activeStreams[cameraId];
+      const videoEl = videoRefs.current[cameraId];
+      
+      // If the stream is active and video element is present, setup once
+      if (isActive && videoEl && !hlsInstancesRef.current[cameraId]) {
+        setupHLSPlayer(cameraId, videoEl, onLog, updateCameraState);
+      }
+      // If the stream is not active, cleanup
+      if ((!isActive || !videoEl) && hlsInstancesRef.current[cameraId]) {
+        cleanupHLSPlayer(cameraId, onLog);
+      }
     });
+
+    // Cleanup function
+    return () => {
+      cameraIds.forEach((cameraId) => {
+        cleanupHLSPlayer(cameraId, onLog);
+      });
+    };
+  }, [activeStreams, layout, isFullscreen, currentPage, setupHLSPlayer, cleanupHLSPlayer, hlsInstancesRef, onLog, updateCameraState]);
+
+  const renderCamera = (cameraId: number) => {
+    return (
+      <CameraTile
+        key={cameraId}
+        cameraId={cameraId}
+        url={cameraUrls[cameraId]}
+        name={cameraNames[cameraId] || `Camera ${cameraId}`}
+        isActive={activeStreams[cameraId]}
+        isEditing={editingCamera === cameraId}
+        isEditingName={editingName === cameraId}
+        cameraState={cameraStates[cameraId] || initializeCameraState(cameraId)}
+        tempUrl={tempUrl}
+        tempName={tempName}
+        setEditingCamera={setEditingCamera}
+        setEditingName={setEditingName}
+        setTempUrl={setTempUrl}
+        setTempName={setTempName}
+        handleUrlSubmit={handleUrlSubmit}
+        handleNameSubmit={handleNameSubmit}
+        onSnapshot={onSnapshot}
+        startStream={startStream}
+        stopStream={stopStream}
+        resetCamera={resetCamera}
+        MAX_RETRIES={MAX_RETRIES}
+        onLog={onLog}
+        videoRefs={videoRefs}
+      />
+    );
   };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [activeStreams, layout, isFullscreen, currentPage]);
-
-const renderCamera = (cameraId: number) => {
-  const isActive = activeStreams[cameraId];
-  const url = cameraUrls[cameraId];
-  const name = cameraNames[cameraId] || `Camera ${cameraId}`;
-  const isEditing = editingCamera === cameraId;
-  const isEditingName = editingName === cameraId;
-  const cameraState = cameraStates[cameraId] || initializeCameraState(cameraId);
-
-  const getStatusColor = () => {
-    if (isActive && cameraState.hlsAvailable) return 'bg-green-500';
-    if (isActive && !cameraState.hlsAvailable) return 'bg-orange-500';
-    switch (cameraState.connectionStatus) {
-      case 'connecting': return 'bg-yellow-500 animate-pulse';
-      case 'failed': return 'bg-red-500';
-      default: return 'bg-gray-500';
-    }
-  };
-
-  const getStatusText = () => {
-    if (isActive && cameraState.hlsAvailable) return 'Live';
-    if (isActive && !cameraState.hlsAvailable) return 'Converting...';
-    switch (cameraState.connectionStatus) {
-      case 'connecting': return 'Connecting...';
-      case 'failed': return `Failed (${cameraState.retryCount}/${MAX_RETRIES})`;
-      default: return 'Stopped';
-    }
-  };
-
-  return (
-    <CameraTile
-      key={cameraId}
-      cameraId={cameraId}
-      url={cameraUrls[cameraId]}
-      name={cameraNames[cameraId] || `Camera ${cameraId}`}
-      isActive={activeStreams[cameraId]}
-      isEditing={editingCamera === cameraId}
-      isEditingName={editingName === cameraId}
-      cameraState={cameraStates[cameraId] || initializeCameraState(cameraId)}
-      tempUrl={tempUrl}
-      tempName={tempName}
-      setEditingCamera={setEditingCamera}
-      setEditingName={setEditingName}
-      setTempUrl={setTempUrl}
-      setTempName={setTempName}
-      handleUrlSubmit={handleUrlSubmit}
-      handleNameSubmit={handleNameSubmit}
-      onSnapshot={onSnapshot}
-      startStream={startStream}
-      stopStream={stopStream}
-      resetCamera={resetCamera}
-      MAX_RETRIES={MAX_RETRIES}
-      onLog={onLog}
-      videoRefs={videoRefs}
-    />
-  );
-};
 
   const effectiveLayout = isFullscreen ? 12 : layout;
   const camerasToShow = effectiveLayout;
