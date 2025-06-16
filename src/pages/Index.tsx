@@ -272,14 +272,22 @@ const Index = () => {
         )}
 
         <main className="flex-1 flex flex-col">
-          {/* Header - only show when not in fullscreen */}
-          {!isFullscreen && (
-            <div className="border-b border-slate-700 bg-slate-900/95 backdrop-blur-sm">
-              <div className="px-6 py-4">
-                <div className="flex items-center justify-between">
+          {/* Header - always show with persistent logo */}
+          <div className="border-b border-slate-700 bg-slate-900/95 backdrop-blur-sm">
+            <div className="px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  {!isFullscreen && <SidebarTrigger className="text-white hover:bg-slate-700" />}
                   <div className="flex items-center space-x-4">
-                    <SidebarTrigger className="text-white hover:bg-slate-700" />
-                    <div className="flex items-center space-x-3">
+                    {/* Persistent Logo - 4x larger */}
+                    <div className="w-16 h-16 bg-slate-800 rounded-lg p-3">
+                      <img 
+                        src="/lovable-uploads/7cca0fa7-2e1b-4160-9134-844eadbfaf2d.png" 
+                        alt="Jericho Security Logo" 
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                    {!isFullscreen && (
                       <div>
                         <h1 className="text-2xl font-bold text-white tracking-tight">
                           JERICHO SECURITY
@@ -288,48 +296,33 @@ const Index = () => {
                           Professional Video Surveillance System
                         </p>
                       </div>
-                    </div>
+                    )}
                   </div>
+                </div>
 
-                  <div className="flex items-center space-x-4">
-                    <Button
-                      variant={isFullscreen ? "secondary" : "outline"}
-                      size="sm"
-                      onClick={() => setIsFullscreen(!isFullscreen)}
-                      className="text-white border-slate-600 hover:bg-slate-700"
-                    >
-                      {isFullscreen ? (
-                        <>
-                          <Minimize2 className="w-4 h-4 mr-2" />
-                          Exit Fullscreen
-                        </>
-                      ) : (
-                        <>
-                          <Maximize2 className="w-4 h-4 mr-2" />
-                          Fullscreen
-                        </>
-                      )}
-                    </Button>
-                  </div>
+                <div className="flex items-center space-x-4">
+                  <Button
+                    variant={isFullscreen ? "secondary" : "outline"}
+                    size="sm"
+                    onClick={() => setIsFullscreen(!isFullscreen)}
+                    className="text-white border-slate-600 hover:bg-slate-700"
+                  >
+                    {isFullscreen ? (
+                      <>
+                        <Minimize2 className="w-4 h-4 mr-2" />
+                        Exit Fullscreen
+                      </>
+                    ) : (
+                      <>
+                        <Maximize2 className="w-4 h-4 mr-2" />
+                        Fullscreen
+                      </>
+                    )}
+                  </Button>
                 </div>
               </div>
             </div>
-          )}
-
-          {/* Fullscreen toggle button when in fullscreen */}
-          {isFullscreen && (
-            <div className="absolute top-4 right-4 z-50">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setIsFullscreen(false)}
-                className="text-white bg-slate-800/90 backdrop-blur-sm border-slate-600 hover:bg-slate-700"
-              >
-                <Minimize2 className="w-4 h-4 mr-2" />
-                Exit Fullscreen
-              </Button>
-            </div>
-          )}
+          </div>
 
           {/* Main Content */}
           <div className="flex-1 p-6">
