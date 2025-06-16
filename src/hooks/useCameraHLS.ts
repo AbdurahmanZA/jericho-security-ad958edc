@@ -1,5 +1,5 @@
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import Hls from "hls.js";
 
 export interface HLSPlayer {
@@ -11,7 +11,20 @@ export interface HLSPlayer {
 export const useCameraHLS = (): HLSPlayer => {
   const hlsInstancesRef = useRef<Record<number, Hls>>({});
 
-  const setupHLSPlayer = (
+  const cleanupHLSPlayer = useCallback((cameraId: number, onLog?: (msg: string) => void) => {
+    const hls = hlsInstancesRef.current[cameraId];
+    if (hls) {
+      onLog?.(`Cleaning up HLS player for Camera ${cameraId}`);
+      try {
+        hls.destroy();
+      } catch (error) {
+        onLog?.(`Error destroying HLS player for Camera ${cameraId}: ${error}`);
+      }
+      delete hlsInstancesRef.current[cameraId];
+    }
+  }, []);
+
+  const setupHLSPlayer = useCallback((
     cameraId: number,
     videoElement: HTMLVideoElement,
     onLog?: (msg: string) => void,
@@ -20,11 +33,7 @@ export const useCameraHLS = (): HLSPlayer => {
     if (!videoElement) return;
 
     // Clean up any existing HLS player for this camera
-    if (hlsInstancesRef.current[cameraId]) {
-      hlsInstancesRef.current[cameraId].destroy();
-      delete hlsInstancesRef.current[cameraId];
-      onLog?.(`Cleaning up HLS player for Camera ${cameraId}`);
-    }
+    cleanupHLSPlayer(cameraId, onLog);
 
     const hlsUrl = `/hls/camera_${cameraId}.m3u8`;
 
@@ -32,12 +41,15 @@ export const useCameraHLS = (): HLSPlayer => {
       const hls = new Hls({
         enableWorker: false,
         lowLatencyMode: true,
-        backBufferLength: 90,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
+        backBufferLength: 30,
+        maxBufferLength: 15,
+        maxMaxBufferLength: 30,
         startLevel: -1,
         capLevelToPlayerSize: true,
         debug: false,
+        // Reduce CPU usage
+        maxBufferSize: 60 * 1000 * 1000,
+        maxBufferHole: 0.5,
       });
 
       hlsInstancesRef.current[cameraId] = hls;
@@ -59,14 +71,21 @@ export const useCameraHLS = (): HLSPlayer => {
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              setTimeout(() => hls.startLoad(), 1000);
+              setTimeout(() => {
+                if (hlsInstancesRef.current[cameraId] === hls) {
+                  hls.startLoad();
+                }
+              }, 1000);
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
-              setTimeout(() => hls.recoverMediaError(), 1000);
+              setTimeout(() => {
+                if (hlsInstancesRef.current[cameraId] === hls) {
+                  hls.recoverMediaError();
+                }
+              }, 1000);
               break;
             default:
-              hls.destroy();
-              delete hlsInstancesRef.current[cameraId];
+              cleanupHLSPlayer(cameraId, onLog);
               updateCameraState?.(cameraId, { hlsAvailable: false, lastError: `HLS Fatal Error: ${data.details}` });
           }
         }
@@ -84,22 +103,22 @@ export const useCameraHLS = (): HLSPlayer => {
       onLog?.(`HLS not supported for Camera ${cameraId}`);
       updateCameraState?.(cameraId, { hlsAvailable: false, lastError: "HLS not supported by browser" });
     }
-  };
-
-  const cleanupHLSPlayer = (cameraId: number, onLog?: (msg: string) => void) => {
-    if (hlsInstancesRef.current[cameraId]) {
-      onLog?.(`Cleaning up HLS player for Camera ${cameraId}`);
-      hlsInstancesRef.current[cameraId].destroy();
-      delete hlsInstancesRef.current[cameraId];
-    }
-  };
+  }, [cleanupHLSPlayer]);
 
   // Cleanup all HLS instances when unmounting
   useEffect(() => {
     return () => {
       Object.keys(hlsInstancesRef.current).forEach(id => {
-        hlsInstancesRef.current[Number(id)]?.destroy();
+        const hls = hlsInstancesRef.current[Number(id)];
+        if (hls) {
+          try {
+            hls.destroy();
+          } catch (error) {
+            console.warn(`Error destroying HLS instance ${id}:`, error);
+          }
+        }
       });
+      hlsInstancesRef.current = {};
     };
   }, []);
 
