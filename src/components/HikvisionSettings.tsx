@@ -6,7 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Trash2, TestTube, Wifi, WifiOff, Save, Camera, Cloud, Eye, Link } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Plus, Trash2, TestTube, Wifi, WifiOff, Save, Camera, Cloud, Eye, Link, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface HikvisionCamera {
@@ -303,6 +304,24 @@ export const HikvisionSettings: React.FC = () => {
     }
   };
 
+  const getStreamingStatus = (camera: HikvisionCamera) => {
+    if (camera.type === 'rtsp') {
+      return {
+        canStream: true,
+        status: 'Ready for WebRTC/HLS streaming',
+        icon: <CheckCircle className="w-4 h-4 text-green-500" />,
+        variant: 'default' as const
+      };
+    } else {
+      return {
+        canStream: false,
+        status: 'Requires API integration',
+        icon: <AlertTriangle className="w-4 h-4 text-amber-500" />,
+        variant: 'secondary' as const
+      };
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -313,6 +332,24 @@ export const HikvisionSettings: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {/* Global Alert about streaming capabilities */}
+      <Alert>
+        <AlertTriangle className="h-4 w-4" />
+        <AlertTitle>Streaming Status</AlertTitle>
+        <AlertDescription className="text-sm">
+          <div className="space-y-2 mt-2">
+            <div className="flex items-center space-x-2">
+              <CheckCircle className="w-4 h-4 text-green-500" />
+              <span><strong>RTSP Cameras:</strong> Full WebRTC + HLS streaming support (Ready to use)</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              <span><strong>Cloud Cameras (EZVIZ/HikConnect):</strong> Configuration only - requires API integration for streaming</span>
+            </div>
+          </div>
+        </AlertDescription>
+      </Alert>
 
       <Tabs defaultValue="cameras" className="space-y-6">
         <TabsList className="grid w-full grid-cols-3">
@@ -334,7 +371,7 @@ export const HikvisionSettings: React.FC = () => {
           <div className="flex items-center justify-between">
             <h4 className="font-semibold uppercase tracking-wide">All Connected Cameras</h4>
             <div className="text-sm text-muted-foreground">
-              {cameras.length} cameras configured
+              {cameras.length} cameras configured • {cameras.filter(c => c.type === 'rtsp').length} streaming ready
             </div>
           </div>
           
@@ -346,80 +383,106 @@ export const HikvisionSettings: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {cameras.map((camera) => (
-                <div key={camera.id} className="p-4 border border-border rounded-lg bg-card">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center space-x-2">
-                      {getCameraTypeIcon(camera.type)}
-                      <span className="font-semibold text-sm">{camera.name}</span>
-                      {camera.connected ? (
-                        <Wifi className="w-3 h-3 text-green-500" />
-                      ) : (
-                        <WifiOff className="w-3 h-3 text-red-500" />
-                      )}
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => deleteCamera(camera.id)}
-                      className="text-red-500 hover:text-red-600 h-6 w-6 p-0"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  </div>
-                  
-                  <div className="space-y-2 mb-3">
-                    {getCameraTypeBadge(camera.type)}
-                    {camera.type === 'rtsp' && (
-                      <div className="text-xs text-muted-foreground">
-                        {camera.ip}:{camera.port}
+              {cameras.map((camera) => {
+                const streamStatus = getStreamingStatus(camera);
+                return (
+                  <div key={camera.id} className="p-4 border border-border rounded-lg bg-card">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-2">
+                        {getCameraTypeIcon(camera.type)}
+                        <span className="font-semibold text-sm">{camera.name}</span>
+                        {camera.connected ? (
+                          <Wifi className="w-3 h-3 text-green-500" />
+                        ) : (
+                          <WifiOff className="w-3 h-3 text-red-500" />
+                        )}
                       </div>
-                    )}
-                    {camera.cloudDeviceId && (
-                      <div className="text-xs text-muted-foreground">
-                        Device: {camera.cloudDeviceId}
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        checked={camera.enabled}
-                        onCheckedChange={(checked) => 
-                          toggleCameraEnabled(camera.id, checked as boolean)
-                        }
-                      />
-                      <span className="text-xs font-medium">Monitor</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => deleteCamera(camera.id)}
+                        className="text-red-500 hover:text-red-600 h-6 w-6 p-0"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
                     </div>
                     
-                    <Badge variant={camera.connected ? "default" : "secondary"} className="text-xs">
-                      {camera.connected ? 'Online' : 'Offline'}
-                    </Badge>
-                  </div>
-                  
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">Events:</div>
-                    <div className="flex flex-wrap gap-1">
-                      {camera.events.slice(0, 2).map(event => (
-                        <Badge key={event} variant="outline" className="text-xs">
-                          {eventTypes.find(e => e.id === event)?.label.split(' ')[0] || event}
+                    <div className="space-y-2 mb-3">
+                      <div className="flex items-center space-x-2">
+                        {getCameraTypeBadge(camera.type)}
+                        <Badge variant={streamStatus.variant} className="text-xs flex items-center space-x-1">
+                          {streamStatus.icon}
+                          <span>{streamStatus.canStream ? 'Stream Ready' : 'Config Only'}</span>
                         </Badge>
-                      ))}
-                      {camera.events.length > 2 && (
-                        <Badge variant="outline" className="text-xs">
-                          +{camera.events.length - 2}
-                        </Badge>
+                      </div>
+                      {camera.type === 'rtsp' && (
+                        <div className="text-xs text-muted-foreground">
+                          {camera.ip}:{camera.port}
+                        </div>
                       )}
+                      {camera.cloudDeviceId && (
+                        <div className="text-xs text-muted-foreground">
+                          Device: {camera.cloudDeviceId}
+                        </div>
+                      )}
+                      <div className="text-xs text-muted-foreground flex items-center space-x-1">
+                        {streamStatus.icon}
+                        <span>{streamStatus.status}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          checked={camera.enabled}
+                          onCheckedChange={(checked) => 
+                            toggleCameraEnabled(camera.id, checked as boolean)
+                          }
+                        />
+                        <span className="text-xs font-medium">Monitor</span>
+                      </div>
+                      
+                      <Badge variant={camera.connected ? "default" : "secondary"} className="text-xs">
+                        {camera.connected ? 'Online' : 'Offline'}
+                      </Badge>
+                    </div>
+                    
+                    <div>
+                      <div className="text-xs text-muted-foreground mb-1">Events:</div>
+                      <div className="flex flex-wrap gap-1">
+                        {camera.events.slice(0, 2).map(event => (
+                          <Badge key={event} variant="outline" className="text-xs">
+                            {eventTypes.find(e => e.id === event)?.label.split(' ')[0] || event}
+                          </Badge>
+                        ))}
+                        {camera.events.length > 2 && (
+                          <Badge variant="outline" className="text-xs">
+                            +{camera.events.length - 2}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </TabsContent>
 
         <TabsContent value="cloud" className="space-y-6">
+          {/* Cloud API Status Alert */}
+          <Alert>
+            <Cloud className="h-4 w-4" />
+            <AlertTitle>Cloud Integration Status</AlertTitle>
+            <AlertDescription>
+              <div className="space-y-2 mt-2 text-sm">
+                <p><strong>Current Status:</strong> Configuration interface only</p>
+                <p><strong>For Streaming:</strong> Requires API keys and backend integration</p>
+                <p><strong>Next Steps:</strong> Add your API credentials below, then contact support for streaming activation</p>
+              </div>
+            </AlertDescription>
+          </Alert>
+
           <div className="p-6 border border-border rounded-lg bg-card shadow-sm">
             <h4 className="font-semibold uppercase tracking-wide mb-2">API Configuration</h4>
             <p className="text-sm text-muted-foreground mb-4">
@@ -490,6 +553,9 @@ export const HikvisionSettings: React.FC = () => {
                         <Badge variant={account.connected ? "default" : "secondary"}>
                           {account.connected ? 'Connected' : 'Disconnected'}
                         </Badge>
+                        <Badge variant="secondary" className="text-xs">
+                          Config Only
+                        </Badge>
                       </div>
                       <div className="flex space-x-2">
                         <Button
@@ -557,6 +623,13 @@ export const HikvisionSettings: React.FC = () => {
               
               {editingAccount ? (
                 <div className="space-y-4 p-4 border border-border rounded-lg bg-card">
+                  <Alert>
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription className="text-sm">
+                      This will save account configuration only. Streaming requires additional API integration.
+                    </AlertDescription>
+                  </Alert>
+
                   <div className="flex items-center space-x-2 mb-4">
                     {editingAccount.type === 'ezviz' ? <Eye className="w-5 h-5" /> : <Link className="w-5 h-5" />}
                     <span className="font-medium">{editingAccount.type.toUpperCase()} Account</span>
@@ -597,7 +670,7 @@ export const HikvisionSettings: React.FC = () => {
                       disabled={loading || !editingAccount.username || !editingAccount.password}
                       className="flex-1"
                     >
-                      {loading ? 'Connecting...' : 'Connect Account'}
+                      {loading ? 'Connecting...' : 'Save Configuration'}
                     </Button>
                   </div>
                   
@@ -622,6 +695,14 @@ export const HikvisionSettings: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="rtsp" className="space-y-6">
+          <Alert>
+            <CheckCircle className="h-4 w-4" />
+            <AlertTitle>RTSP Cameras - Full Streaming Support</AlertTitle>
+            <AlertDescription>
+              RTSP cameras work immediately with WebRTC and HLS streaming. Configure your local IP cameras here for instant video monitoring.
+            </AlertDescription>
+          </Alert>
+
           <div className="flex items-center justify-between">
             <h4 className="font-semibold uppercase tracking-wide">RTSP Camera Setup</h4>
             <Button onClick={() => createNewCamera('rtsp')} className="jericho-btn-accent">
@@ -664,7 +745,13 @@ export const HikvisionSettings: React.FC = () => {
                     </div>
                     
                     <div className="space-y-2 mb-3">
-                      {getCameraTypeBadge(camera.type)}
+                      <div className="flex items-center space-x-2">
+                        {getCameraTypeBadge(camera.type)}
+                        <Badge variant={streamStatus.variant} className="text-xs flex items-center space-x-1">
+                          {streamStatus.icon}
+                          <span>{streamStatus.canStream ? 'Stream Ready' : 'Config Only'}</span>
+                        </Badge>
+                      </div>
                       {camera.type === 'rtsp' && (
                         <div className="text-xs text-muted-foreground">
                           {camera.ip}:{camera.port}
@@ -675,6 +762,10 @@ export const HikvisionSettings: React.FC = () => {
                           Device: {camera.cloudDeviceId}
                         </div>
                       )}
+                      <div className="text-xs text-muted-foreground flex items-center space-x-1">
+                        {streamStatus.icon}
+                        <span>{streamStatus.status}</span>
+                      </div>
                     </div>
                     
                     <div className="flex items-center justify-between mb-3">
