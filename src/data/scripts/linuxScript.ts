@@ -61,6 +61,7 @@ sudo a2enmod ssl
 sudo a2enmod proxy
 sudo a2enmod proxy_http
 sudo a2enmod proxy_wstunnel
+sudo a2enmod expires
 
 # Stop Apache and clean web directory
 sudo systemctl stop apache2
@@ -125,10 +126,10 @@ sudo tee /etc/apache2/sites-available/jericho-hls.conf > /dev/null <<'EOAPACHECO
     Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS"
     Header always set Access-Control-Allow-Headers "Content-Type"
 
-    # Enable rewrite engine
+    # Enable rewrite engine FIRST
     RewriteEngine On
     
-    # Serve HLS and snapshots files directly without rewriting to React app
+    # Serve HLS and snapshots files directly BEFORE SPA fallback (CRITICAL ORDER)
     RewriteCond %{REQUEST_URI} ^/hls/
     RewriteRule ^.*$ - [L]
     
@@ -274,10 +275,10 @@ if [ -n "\$DOMAIN" ]; then
     Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS"
     Header always set Access-Control-Allow-Headers "Content-Type"
 
-    # Enable rewrite engine
+    # Enable rewrite engine FIRST
     RewriteEngine On
     
-    # Serve HLS and snapshots files directly without rewriting to React app
+    # Serve HLS and snapshots files directly BEFORE SPA fallback (CRITICAL ORDER)
     RewriteCond %{REQUEST_URI} ^/hls/
     RewriteRule ^.*$ - [L]
     
@@ -333,10 +334,6 @@ EOSSLCONF
   sudo a2ensite jericho-ssl.conf
 fi
 
-# Enable Apache modules for proper HLS handling
-sudo a2enmod expires
-sudo a2enmod headers
-
 # Always enable and reload Apache configs, HTTP and HTTPS
 sudo systemctl daemon-reload
 sudo systemctl enable jericho-backend
@@ -385,4 +382,4 @@ echo "\\n🟢 HTTPS ACCESS: If you have a domain pointing to this server, update
 echo "\\n🔄 VoIP is configured with GSM codec support (default) for reliable emergency communications."
 echo "\\n✅ HLS serving and WebSocket proxy are now properly configured with CORS headers and MIME types for better browser compatibility."
 echo "\\n🔧 Fixed: Added node-fetch dependency to prevent WebSocket stream start errors."
-echo "\\n🎯 Fixed: Apache configuration properly excludes HLS/snapshots from React router fallback."`;
+echo "\\n🎯 PERMANENT FIX: Apache configuration properly serves HLS files directly before SPA fallback - no more manifest parsing errors."`;

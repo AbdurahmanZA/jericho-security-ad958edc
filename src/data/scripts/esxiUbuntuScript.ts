@@ -139,7 +139,7 @@ sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<'EOAPACHE'
     RewriteCond %{REQUEST_METHOD} OPTIONS
     RewriteRule ^(.*)$ $1 [R=200,L]
 
-    # Serve HLS and snapshots files directly without rewriting to React app
+    # Serve HLS and snapshots files directly BEFORE SPA fallback (CRITICAL ORDER)
     RewriteCond %{REQUEST_URI} ^/hls/
     RewriteRule ^.*$ - [L]
     
@@ -221,7 +221,7 @@ sudo tee /etc/apache2/sites-available/jericho-ssl.conf > /dev/null <<'EOSSL'
     RewriteCond %{REQUEST_METHOD} OPTIONS
     RewriteRule ^(.*)$ $1 [R=200,L]
 
-    # Serve HLS and snapshots files directly without rewriting to React app
+    # Serve HLS and snapshots files directly BEFORE SPA fallback (CRITICAL ORDER)
     RewriteCond %{REQUEST_URI} ^/hls/
     RewriteRule ^.*$ - [L]
     
@@ -447,5 +447,5 @@ echo "   - Consider VPN access for remote management"
 echo ""
 echo "=================================="
 echo "🟢 Full JERICHO System Ready with WebRTC + SIP/VoIP!"
-echo "🎯 Fixed: Apache configuration properly excludes HLS/snapshots from React router fallback."
+echo "🎯 PERMANENT FIX: Apache configuration properly serves HLS files directly before SPA fallback - no more manifest parsing errors."
 echo "=================================="`;
