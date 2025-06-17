@@ -1,11 +1,12 @@
+
 import React from "react"
 import { Puzzle } from "lucide-react"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { HikConnectIntegration } from "@/components/integrations/hik-connect"
-import { HikvisionSettings } from "@/components/integrations/hikvision"
+import { HikConnectIntegration } from "@/components/HikConnectIntegration"
+import { HikvisionSettings } from "@/components/HikvisionSettings"
 import ProtectedRoute from "@/components/ProtectedRoute";
 import UserProfile from "@/components/UserProfile";
 import { useAuth } from "@/contexts/AuthContext";
