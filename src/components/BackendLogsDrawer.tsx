@@ -1,77 +1,178 @@
 
-import React from "react";
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
-import { Button } from "@/components/ui/button";
-import { Video, Copy } from "lucide-react";
+import React, { useState, useEffect, useRef } from 'react';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Terminal, Trash2, Download } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
-interface Props {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  logs: string[];
-  onCopy: () => void;
-  onDownload: () => void;
-  onClear: () => void;
+interface LogEntry {
+  timestamp: string;
+  message: string;
+  type: 'info' | 'error' | 'warning';
 }
 
-const BackendLogsDrawer: React.FC<Props> = ({
-  open, onOpenChange, logs, onCopy, onDownload, onClear,
-}) => (
-  <Drawer open={open} onOpenChange={onOpenChange}>
-    <DrawerContent>
-      <DrawerHeader>
-        <DrawerTitle>
-          <Video className="inline w-5 h-5 mr-2" />
-          Backend Server Logs ({logs.length})
-        </DrawerTitle>
-        <DrawerDescription>
-          Real-time system events and service messages from the backend server.
-        </DrawerDescription>
-        <div className="flex items-center space-x-2 mt-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onCopy}
-            disabled={logs.length === 0}
-          >
-            <Copy className="w-4 h-4 mr-2" />
-            Copy Backend Logs
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onDownload}
-            disabled={logs.length === 0}
-          >
-            <svg className="w-4 h-4 mr-2" stroke="currentColor" fill="none" strokeWidth="2" viewBox="0 0 24 24">
-              <path d="M12 3v12m0 0 4-4m-4 4-4-4m8 9H8a2 2 0 0 1-2-2V17m12 2V17a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v2"></path>
-            </svg>
-            Download Logs
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onClear}
-            disabled={logs.length === 0}
-          >
-            Clear Logs
-          </Button>
-        </div>
-      </DrawerHeader>
-      <div className="max-h-96 overflow-y-auto px-4 pb-4">
-        {logs.length === 0 ? (
-          <div className="text-center text-muted-foreground py-6">
-            <Video className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p className="font-medium">No backend logs available</p>
-            <p className="text-xs mt-1">Connect to the backend server to view live system logs.</p>
-          </div>
-        ) : (
-          <pre className="text-xs font-mono bg-muted/50 rounded px-3 py-2 whitespace-pre-wrap break-words select-all cursor-text min-h-64">
-            {logs.join('\n')}
-          </pre>
-        )}
-      </div>
-    </DrawerContent>
-  </Drawer>
-);
+export const BackendLogsDrawer: React.FC = () => {
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const { toast } = useToast();
 
-export default BackendLogsDrawer;
+  const addLog = (message: string, type: 'info' | 'error' | 'warning' = 'info') => {
+    const timestamp = new Date().toLocaleTimeString();
+    setLogs(prev => [...prev, { timestamp, message, type }]);
+  };
+
+  const connectWebSocket = () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
+    addLog('Attempting WebSocket connection to backend server');
+    
+    // Fixed: Use ws:// instead of wss:// for HTTP setup
+    const wsUrl = `ws://192.168.0.138/api/ws`;
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      setIsConnected(true);
+      addLog('Connected to backend monitoring server');
+    };
+
+    ws.onclose = () => {
+      setIsConnected(false);
+      addLog('Backend monitoring disconnected', 'warning');
+      
+      // Retry connection after 5 seconds
+      setTimeout(connectWebSocket, 5000);
+    };
+
+    ws.onerror = (error) => {
+      addLog(`WebSocket connection failed to ${wsUrl}`, 'error');
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'log') {
+          addLog(`Backend: ${data.message}`, data.level || 'info');
+        }
+      } catch {
+        addLog(`Backend: ${event.data}`);
+      }
+    };
+
+    wsRef.current = ws;
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      connectWebSocket();
+    }
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [isOpen]);
+
+  const clearLogs = () => {
+    setLogs([]);
+    toast({
+      title: "Logs Cleared",
+      description: "Backend logs have been cleared",
+    });
+  };
+
+  const downloadLogs = () => {
+    const logsText = logs.map(log => `[${log.timestamp}] ${log.type.toUpperCase()}: ${log.message}`).join('\n');
+    const blob = new Blob([logsText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `backend-logs-${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const getLogTypeColor = (type: string) => {
+    switch (type) {
+      case 'error': return 'text-red-400';
+      case 'warning': return 'text-yellow-400';
+      default: return 'text-gray-300';
+    }
+  };
+
+  return (
+    <Sheet open={isOpen} onOpenChange={setIsOpen}>
+      <SheetTrigger asChild>
+        <Button variant="outline" size="sm" className="bg-gray-800 text-white border-gray-600">
+          <Terminal className="w-4 h-4 mr-2" />
+          Backend Logs
+          {isConnected && <div className="w-2 h-2 bg-green-500 rounded-full ml-2"></div>}
+        </Button>
+      </SheetTrigger>
+      <SheetContent side="right" className="w-[600px] bg-gray-900 text-white border-gray-700">
+        <SheetHeader>
+          <SheetTitle className="text-white flex items-center justify-between">
+            <span>Backend Monitoring</span>
+            <div className="flex items-center space-x-2">
+              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+              <span className="text-sm text-gray-400">
+                {isConnected ? 'Connected' : 'Disconnected'}
+              </span>
+            </div>
+          </SheetTitle>
+        </SheetHeader>
+
+        <div className="flex justify-between items-center py-4">
+          <div className="text-sm text-gray-400">
+            {logs.length} log entries
+          </div>
+          <div className="flex space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={downloadLogs}
+              disabled={logs.length === 0}
+              className="bg-blue-600 text-white border-blue-600 hover:bg-blue-700"
+            >
+              <Download className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={clearLogs}
+              disabled={logs.length === 0}
+              className="bg-red-600 text-white border-red-600 hover:bg-red-700"
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+
+        <ScrollArea className="h-[calc(100vh-200px)] bg-black/50 rounded-lg p-4">
+          <div className="space-y-1">
+            {logs.length === 0 ? (
+              <div className="text-gray-500 text-center py-8">
+                No logs yet. Waiting for backend activity...
+              </div>
+            ) : (
+              logs.map((log, index) => (
+                <div key={index} className="font-mono text-sm">
+                  <span className="text-gray-500">[{log.timestamp}]</span>
+                  <span className={`ml-2 ${getLogTypeColor(log.type)}`}>
+                    {log.message}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </ScrollArea>
+      </SheetContent>
+    </Sheet>
+  );
+};
