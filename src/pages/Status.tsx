@@ -16,7 +16,8 @@ import {
   Shield,
   Globe,
   Zap,
-  Clock
+  Clock,
+  HardDrive
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -75,10 +76,10 @@ const Status = () => {
         message: 'Checking stream status...',
         icon: Activity
       },
-      nginx: {
-        name: 'Nginx Proxy',
+      apache: {
+        name: 'Apache Server',
         status: 'checking',
-        message: 'Checking Nginx proxy status...',
+        message: 'Checking Apache proxy status...',
         icon: Globe
       },
       ssl: {
@@ -92,6 +93,12 @@ const Status = () => {
         status: 'checking',
         message: 'Checking auto-start services...',
         icon: Zap
+      },
+      disk: {
+        name: 'Disk Space',
+        status: 'checking',
+        message: 'Checking available disk space...',
+        icon: HardDrive
       }
     };
 
@@ -108,7 +115,7 @@ const Status = () => {
   // Check backend server status
   const checkBackendServer = async () => {
     try {
-      const response = await fetch('https://192.168.0.138/api/status', {
+      const response = await fetch('/api/status', {
         method: 'GET'
       });
 
@@ -138,7 +145,7 @@ const Status = () => {
   // Check WebSocket connection
   const checkWebSocket = () => {
     try {
-      const ws = new WebSocket('wss://192.168.0.138/ws');
+      const ws = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/ws`);
       wsRef.current = ws;
 
       const timeout = setTimeout(() => {
@@ -187,22 +194,23 @@ const Status = () => {
     }
   };
 
-  // Check database connectivity
+  // Check database connectivity using new health endpoint
   const checkDatabase = async () => {
     try {
-      const response = await fetch('https://192.168.0.138/api/cameras');
+      const response = await fetch('/api/health/database');
       if (response.ok) {
-        const cameras = await response.json();
+        const data = await response.json();
         updateCheck('database', {
-          status: 'healthy',
-          message: 'Database accessible',
-          details: `${cameras.length} cameras configured`
+          status: data.status === 'healthy' ? 'healthy' : 'error',
+          message: data.message,
+          details: data.accessible ? `${data.camera_count} cameras configured` : 'Database not accessible'
         });
       } else {
+        const errorData = await response.json();
         updateCheck('database', {
           status: 'error',
-          message: 'Database query failed',
-          details: 'API endpoint returned error'
+          message: errorData.message || 'Database query failed',
+          details: errorData.error || 'API endpoint returned error'
         });
       }
     } catch (error) {
@@ -214,15 +222,25 @@ const Status = () => {
     }
   };
 
-  // Check FFmpeg availability
+  // Check FFmpeg availability using new health endpoint
   const checkFFmpeg = async () => {
     try {
-      // This would typically be checked via a backend endpoint
-      updateCheck('ffmpeg', {
-        status: 'warning',
-        message: 'FFmpeg status unknown',
-        details: 'Requires backend API to verify FFmpeg installation'
-      });
+      const response = await fetch('/api/health/ffmpeg');
+      if (response.ok) {
+        const data = await response.json();
+        updateCheck('ffmpeg', {
+          status: data.status === 'healthy' ? 'healthy' : 'error',
+          message: data.message,
+          details: data.version || 'FFmpeg version information available'
+        });
+      } else {
+        const errorData = await response.json();
+        updateCheck('ffmpeg', {
+          status: 'error',
+          message: errorData.message || 'FFmpeg not available',
+          details: errorData.error || 'FFmpeg may not be installed'
+        });
+      }
     } catch (error) {
       updateCheck('ffmpeg', {
         status: 'error',
@@ -260,27 +278,27 @@ const Status = () => {
     }
   };
 
-  // Check Nginx proxy
-  const checkNginx = async () => {
+  // Check Apache proxy
+  const checkApache = async () => {
     try {
-      const response = await fetch('https://192.168.0.138/', { method: 'HEAD' });
+      const response = await fetch('/', { method: 'HEAD' });
       if (response.ok) {
-        updateCheck('nginx', {
+        updateCheck('apache', {
           status: 'healthy',
-          message: 'Nginx proxy responding',
+          message: 'Apache proxy responding',
           details: 'Web server accessible via HTTPS'
         });
       } else {
-        updateCheck('nginx', {
+        updateCheck('apache', {
           status: 'warning',
-          message: `Nginx returned ${response.status}`,
+          message: `Apache returned ${response.status}`,
           details: 'Proxy may have configuration issues'
         });
       }
     } catch (error) {
-      updateCheck('nginx', {
+      updateCheck('apache', {
         status: 'error',
-        message: 'Nginx proxy not responding',
+        message: 'Apache proxy not responding',
         details: 'Web server may be down'
       });
     }
@@ -289,12 +307,19 @@ const Status = () => {
   // Check SSL certificate
   const checkSSL = async () => {
     try {
-      // In a real implementation, this would check certificate validity
-      updateCheck('ssl', {
-        status: 'healthy',
-        message: 'SSL connection established',
-        details: 'HTTPS is working'
-      });
+      if (window.location.protocol === 'https:') {
+        updateCheck('ssl', {
+          status: 'healthy',
+          message: 'SSL connection established',
+          details: 'HTTPS is working'
+        });
+      } else {
+        updateCheck('ssl', {
+          status: 'warning',
+          message: 'Not using HTTPS',
+          details: 'Consider enabling SSL for security'
+        });
+      }
     } catch (error) {
       updateCheck('ssl', {
         status: 'error',
@@ -304,14 +329,65 @@ const Status = () => {
     }
   };
 
-  // Check systemd services
-  const checkSystemd = () => {
-    // This would require a backend endpoint to check service status
-    updateCheck('systemd', {
-      status: 'warning',
-      message: 'Service status unknown',
-      details: 'Requires backend API to check systemd services (jericho-backend, nginx)'
-    });
+  // Check systemd services using new health endpoint
+  const checkSystemd = async () => {
+    try {
+      const response = await fetch('/api/health/systemd');
+      if (response.ok) {
+        const data = await response.json();
+        const serviceNames = Object.keys(data.services || {});
+        const activeServices = Object.values(data.services || {}).filter((s: any) => s.active).length;
+        
+        updateCheck('systemd', {
+          status: data.status === 'healthy' ? 'healthy' : 'warning',
+          message: data.message,
+          details: `${activeServices}/${serviceNames.length} services active: ${serviceNames.join(', ')}`
+        });
+      } else {
+        const errorData = await response.json();
+        updateCheck('systemd', {
+          status: 'error',
+          message: errorData.message || 'Cannot check systemd services',
+          details: errorData.error || 'Service status API not available'
+        });
+      }
+    } catch (error) {
+      updateCheck('systemd', {
+        status: 'error',
+        message: 'Cannot check systemd services',
+        details: 'Service status endpoint not reachable'
+      });
+    }
+  };
+
+  // Check disk space using new health endpoint
+  const checkDiskSpace = async () => {
+    try {
+      const response = await fetch('/api/health/disk-space');
+      if (response.ok) {
+        const data = await response.json();
+        const usagePercent = parseInt(data.use_percentage?.replace('%', '') || '0');
+        
+        updateCheck('disk', {
+          status: usagePercent > 90 ? 'error' : usagePercent > 75 ? 'warning' : 'healthy',
+          message: `${data.use_percentage} disk usage`,
+          details: `${data.used} used of ${data.size} total, ${data.available} available`
+        });
+      } else {
+        const errorData = await response.json();
+        updateCheck('disk', {
+          status: 'error',
+          message: errorData.message || 'Cannot check disk space',
+          details: errorData.error || 'Disk space API not available'
+        });
+      }
+    } catch (error) {
+      updateCheck('disk', {
+        status: 'error',
+        message: 'Cannot check disk space',
+        details: 'Disk space endpoint not reachable'
+      });
+    }
   };
 
   // Run all health checks
@@ -326,10 +402,11 @@ const Status = () => {
         checkDatabase(),
         checkFFmpeg(),
         checkStreams(),
-        checkNginx(),
-        checkSSL()
+        checkApache(),
+        checkSSL(),
+        checkSystemd(),
+        checkDiskSpace()
       ]);
-      checkSystemd();
     } catch (error) {
       toast({
         title: "Health Check Error",
