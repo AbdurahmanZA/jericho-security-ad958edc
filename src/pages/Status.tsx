@@ -128,7 +128,6 @@ const Status = () => {
     });
   };
 
-  // WebSocket connection for real-time monitoring
   const connectWebSocket = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     
@@ -143,7 +142,6 @@ const Status = () => {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
-      // Connection timeout
       const connectionTimeout = setTimeout(() => {
         if (ws.readyState === WebSocket.CONNECTING) {
           ws.close();
@@ -160,7 +158,6 @@ const Status = () => {
         addStreamLog(0, 'websocket', 'success', 'WebSocket monitoring connected successfully');
         addApiLog('websocket_open', 'success', 'WebSocket connection established', { url: wsUrl });
         
-        // Send a ping to test connection
         ws.send(JSON.stringify({ type: 'monitor_ping', timestamp: Date.now() }));
       };
 
@@ -168,7 +165,6 @@ const Status = () => {
         try {
           const data = JSON.parse(event.data);
           
-          // Log WebSocket messages for debugging
           addStreamLog(0, 'websocket_msg', 'info', `Received: ${data.type}${data.cameraId ? ` (Camera ${data.cameraId})` : ''}`);
           addApiLog('websocket_message', 'info', `Received message: ${data.type}`, data);
           
@@ -211,7 +207,6 @@ const Status = () => {
               break;
           }
           
-          // Update real-time stats if provided
           if (data.activeStreams !== undefined) {
             setRealTimeStats(prev => ({
               ...prev,
@@ -253,12 +248,11 @@ const Status = () => {
           attempt: wsReconnectAttempts 
         });
         
-        // Exponential backoff for reconnection
         const backoffDelay = Math.min(1000 * Math.pow(2, wsReconnectAttempts), 30000);
         setWsReconnectAttempts(prev => prev + 1);
         
         setTimeout(() => {
-          if (wsReconnectAttempts < 10) { // Max 10 attempts
+          if (wsReconnectAttempts < 10) {
             connectWebSocket();
           } else {
             addApiLog('websocket_reconnect_failed', 'error', 'Max reconnection attempts reached');
@@ -281,13 +275,11 @@ const Status = () => {
     }
   };
 
-  // Test individual camera connections
   const testCameraConnection = async (cameraId: number) => {
     addStreamLog(cameraId, 'test_start', 'info', 'Starting connection test...');
     updateCameraStatus(cameraId, { streamStatus: 'connecting' });
 
     try {
-      // Test stream status endpoint
       const statusResponse = await fetch(`/api/streams/${cameraId}/status`);
       if (statusResponse.ok) {
         const statusData = await statusResponse.json();
@@ -297,7 +289,6 @@ const Status = () => {
         addStreamLog(cameraId, 'test_status', 'error', `Status check failed: ${statusResponse.status}`);
       }
 
-      // Test WebRTC availability
       const webrtcResponse = await fetch(`/api/webrtc/streams/${cameraId}/status`);
       if (webrtcResponse.ok) {
         const webrtcData = await webrtcResponse.json();
@@ -305,7 +296,6 @@ const Status = () => {
           `WebRTC ${webrtcData.webrtc_available ? 'available' : 'not available'}`);
       }
 
-      // Test HLS stream availability
       const hlsResponse = await fetch(`/hls/camera_${cameraId}.m3u8`, { method: 'HEAD' });
       if (hlsResponse.ok) {
         addStreamLog(cameraId, 'test_hls', 'success', 'HLS stream file exists');
@@ -319,7 +309,6 @@ const Status = () => {
     }
   };
 
-  // Start a camera stream for testing
   const startTestStream = async (cameraId: number) => {
     addStreamLog(cameraId, 'start_test', 'info', 'Starting test stream...');
     updateCameraStatus(cameraId, { streamStatus: 'connecting' });
@@ -337,7 +326,6 @@ const Status = () => {
     }
   };
 
-  // Stop a camera stream
   const stopTestStream = async (cameraId: number) => {
     addStreamLog(cameraId, 'stop_test', 'info', 'Stopping test stream...');
 
@@ -354,7 +342,6 @@ const Status = () => {
     }
   };
 
-  // Load camera configuration from localStorage
   const loadCameraConfig = () => {
     try {
       const savedStreams = localStorage.getItem('jericho-stream-urls');
@@ -546,7 +533,6 @@ const Status = () => {
     addApiLog('credentials_test', 'info', 'Testing Hikvision API credentials');
     
     try {
-      // Test the credentials by attempting to get access token
       const response = await fetch('https://open.ys7.com/api/lapp/token/get', {
         method: 'POST',
         headers: {
@@ -579,14 +565,6 @@ const Status = () => {
         type: error.name
       });
       return { success: false, error: error.message };
-    }
-  };
-
-  const testApiCredentialsPrompt = () => {
-    const appKey = prompt('Enter App Key:');
-    const appSecret = prompt('Enter App Secret:');
-    if (appKey && appSecret) {
-      testApiCredentials(appKey, appSecret);
     }
   };
 
@@ -684,11 +662,71 @@ const Status = () => {
           </div>
         </div>
 
-        {/* Enhanced Real-time Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+        {/* System Status Alert */}
+        {errorCount > 0 && (
+          <Alert className="border-red-500 bg-red-500/10">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle className="text-red-400">System Issues Detected</AlertTitle>
+            <AlertDescription className="text-red-300">
+              {errorCount} critical issue{errorCount > 1 ? 's' : ''} found. 
+              The backend server may need to be manually started: <code>sudo systemctl start jericho-backend</code>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* WebSocket Status Alert */}
+        {wsStatus !== 'connected' && (
+          <Alert className="border-yellow-500 bg-yellow-500/10">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle className="text-yellow-400">WebSocket Connection Issue</AlertTitle>
+            <AlertDescription className="text-yellow-300">
+              {wsLastError && <div className="mb-2">Error: {wsLastError}</div>}
+              <div>Reconnect attempts: {wsReconnectAttempts}/10</div>
+              {wsReconnectAttempts >= 10 && (
+                <div className="text-red-400 mt-2">
+                  Max reconnection attempts reached. Check if the backend server is running.
+                </div>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Service Health Checks Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Object.entries(checks).map(([key, check]) => {
+            const IconComponent = check.icon;
+            return (
+              <Card key={key} className="bg-slate-800 border-slate-700">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <IconComponent className={`w-5 h-5 ${getStatusColor(check.status)}`} />
+                      <CardTitle className="text-white text-lg">{check.name}</CardTitle>
+                    </div>
+                    {getStatusBadge(check.status)}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <p className="text-slate-300 text-sm">{check.message}</p>
+                    {check.details && (
+                      <p className="text-slate-400 text-xs">{check.details}</p>
+                    )}
+                    <div className="text-slate-500 text-xs">
+                      Last checked: {check.lastChecked.toLocaleTimeString()}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+
+        {/* Real-time Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card className="bg-slate-800 border-slate-700">
             <CardHeader className="pb-2">
-              <CardTitle className="text-green-500 text-sm font-medium">Healthy</CardTitle>
+              <CardTitle className="text-green-500 text-sm font-medium">Healthy Services</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-white">{healthyCount}</div>
@@ -721,54 +759,7 @@ const Status = () => {
               <div className="text-2xl font-bold text-white">{realTimeStats.activeStreams}</div>
             </CardContent>
           </Card>
-
-          <Card className="bg-slate-800 border-slate-700">
-            <CardHeader className="pb-2">
-              <CardTitle className={`text-sm font-medium ${wsStatus === 'connected' ? 'text-green-500' : 'text-red-500'}`}>
-                WebSocket
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-lg font-bold text-white capitalize">{wsStatus}</div>
-              {wsLastError && (
-                <div className="text-xs text-red-400 mt-1">{wsLastError}</div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="bg-slate-800 border-slate-700">
-            <CardHeader className="pb-2">
-              <CardTitle className={`text-sm font-medium ${backendHealth.responsive ? 'text-green-500' : 'text-red-500'}`}>
-                Backend
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-lg font-bold text-white">
-                {backendHealth.responsive ? 'Online' : 'Offline'}
-              </div>
-              <div className="text-xs text-slate-400">
-                {backendHealth.responseTime}ms
-              </div>
-            </CardContent>
-          </Card>
         </div>
-
-        {/* WebSocket Detailed Status */}
-        {wsStatus !== 'connected' && (
-          <Alert className="border-yellow-500 bg-yellow-500/10">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle className="text-yellow-400">WebSocket Connection Issue</AlertTitle>
-            <AlertDescription className="text-yellow-300">
-              {wsLastError && <div className="mb-2">Error: {wsLastError}</div>}
-              <div>Reconnect attempts: {wsReconnectAttempts}/10</div>
-              {wsReconnectAttempts >= 10 && (
-                <div className="text-red-400 mt-2">
-                  Max reconnection attempts reached. Check if the backend server is running.
-                </div>
-              )}
-            </AlertDescription>
-          </Alert>
-        )}
 
         {/* Camera Status Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -832,13 +823,13 @@ const Status = () => {
           ))}
         </div>
 
-        {/* API Credentials Troubleshooting Logs */}
+        {/* API Credentials Troubleshooting */}
         <Card className="bg-slate-800 border-slate-700">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-white flex items-center">
                 <Key className="w-5 h-5 mr-2" />
-                API Credentials & Authentication Logs
+                API Credentials & Authentication
               </CardTitle>
               <div className="flex space-x-2">
                 <Button 
@@ -860,7 +851,7 @@ const Status = () => {
                   variant="outline"
                   size="sm"
                 >
-                  Clear API Logs
+                  Clear Logs
                 </Button>
               </div>
             </div>
@@ -941,58 +932,7 @@ const Status = () => {
           </CardContent>
         </Card>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="bg-slate-800 border-slate-700">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-green-500 text-sm font-medium">Healthy</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-white">{healthyCount}</div>
-            </CardContent>
-          </Card>
-          
-          <Card className="bg-slate-800 border-slate-700">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-yellow-500 text-sm font-medium">Warnings</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-white">{warningCount}</div>
-            </CardContent>
-          </Card>
-          
-          <Card className="bg-slate-800 border-slate-700">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-red-500 text-sm font-medium">Errors</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-white">{errorCount}</div>
-            </CardContent>
-          </Card>
-          
-          <Card className="bg-slate-800 border-slate-700">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-blue-500 text-sm font-medium">Total Checks</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-white">{Object.keys(checks).length}</div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* System Status Alert */}
-        {errorCount > 0 && (
-          <Alert className="border-red-500 bg-red-500/10">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle className="text-red-400">System Issues Detected</AlertTitle>
-            <AlertDescription className="text-red-300">
-              {errorCount} critical issue{errorCount > 1 ? 's' : ''} found. 
-              The backend server may need to be manually started: <code>sudo systemctl start jericho-backend</code>
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Troubleshooting Section */}
+        {/* Troubleshooting Guide */}
         <Card className="bg-slate-800 border-slate-700">
           <CardHeader>
             <CardTitle className="text-white">Troubleshooting Guide</CardTitle>
@@ -1017,6 +957,7 @@ const Status = () => {
                 <li>Check if Nginx is running: <code>sudo systemctl status nginx</code></li>
                 <li>Verify firewall allows HTTPS: <code>sudo ufw status</code></li>
                 <li>Check SSL certificate validity</li>
+                <li>Code 1006 indicates network/server issue - usually backend is down</li>
               </ul>
             </div>
 
