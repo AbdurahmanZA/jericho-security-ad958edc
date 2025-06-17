@@ -21,60 +21,73 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
   const [isConnecting, setIsConnecting] = useState(false);
   const connectionAttemptRef = useRef<number>(0);
   const isConnectionInProgressRef = useRef<boolean>(false);
+  const hasAttemptedConnectionRef = useRef<boolean>(false);
   
   const { setupWebRTCPlayer, cleanupWebRTCPlayer } = useWebRTC();
   const { setupHLSPlayer, cleanupHLSPlayer } = useCameraHLS();
 
-  // Memoize the log function to prevent unnecessary re-renders
+  // Stable log function
   const logMessage = useCallback((msg: string) => {
+    console.log(`[VideoPlayer ${cameraId}] ${msg}`);
     onLog?.(msg);
-  }, [onLog]);
+  }, [onLog, cameraId]);
 
-  // Memoize the camera state update function
+  // Stable camera state update function
   const updateState = useCallback((updates: any) => {
     updateCameraState?.(cameraId, updates);
   }, [updateCameraState, cameraId]);
 
-  // Cleanup function
+  // Stable cleanup function
   const cleanup = useCallback(() => {
-    logMessage(`Cleaning up all connections for Camera ${cameraId}`);
+    logMessage(`Cleaning up all connections`);
     cleanupWebRTCPlayer(cameraId, logMessage);
     cleanupHLSPlayer(cameraId, logMessage);
     setStreamType('none');
     setIsConnecting(false);
     isConnectionInProgressRef.current = false;
+    hasAttemptedConnectionRef.current = false;
   }, [cameraId, cleanupWebRTCPlayer, cleanupHLSPlayer, logMessage]);
 
-  // Connection attempt function with proper guards
+  // Stable connection attempt function
   const attemptConnection = useCallback(async () => {
+    // Guard: Check if already attempted for this activation
+    if (hasAttemptedConnectionRef.current) {
+      logMessage(`Connection already attempted for this activation, skipping`);
+      return;
+    }
+
+    // Guard: Check if not active or no video element
     if (!isActive || !videoRef.current) {
-      logMessage(`Skipping connection attempt for Camera ${cameraId} - not active or no video element`);
+      logMessage(`Skipping connection - not active or no video element`);
       return;
     }
 
-    // Prevent multiple simultaneous connection attempts
+    // Guard: Prevent multiple simultaneous attempts
     if (isConnectionInProgressRef.current) {
-      logMessage(`Connection already in progress for Camera ${cameraId}, skipping`);
+      logMessage(`Connection already in progress, skipping`);
       return;
     }
 
-    const currentAttempt = ++connectionAttemptRef.current;
+    // Mark that we've attempted connection for this activation
+    hasAttemptedConnectionRef.current = true;
     isConnectionInProgressRef.current = true;
     setIsConnecting(true);
-    logMessage(`Starting connection attempt ${currentAttempt} for Camera ${cameraId}`);
+
+    const currentAttempt = ++connectionAttemptRef.current;
+    logMessage(`Starting connection attempt ${currentAttempt}`);
 
     try {
-      // First clean up any existing connections
+      // Clean up any existing connections first
       cleanupWebRTCPlayer(cameraId, logMessage);
       cleanupHLSPlayer(cameraId, logMessage);
 
       // Try WebRTC first
-      logMessage(`Trying WebRTC for Camera ${cameraId} (attempt ${currentAttempt})`);
+      logMessage(`Trying WebRTC (attempt ${currentAttempt})`);
       const webrtcSuccess = await setupWebRTCPlayer(cameraId, videoRef.current, logMessage);
       
-      // Check if this is still the current attempt
-      if (currentAttempt !== connectionAttemptRef.current) {
-        logMessage(`Outdated attempt ${currentAttempt} for Camera ${cameraId}, aborting`);
+      // Check if this is still the current attempt and camera is still active
+      if (currentAttempt !== connectionAttemptRef.current || !isActive) {
+        logMessage(`Outdated attempt ${currentAttempt}, aborting`);
         return;
       }
       
@@ -82,13 +95,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
         setStreamType('webrtc');
         setIsConnecting(false);
         isConnectionInProgressRef.current = false;
-        logMessage(`Camera ${cameraId} connected via WebRTC (low latency)`);
+        logMessage(`Connected via WebRTC (low latency)`);
         updateState({ connectionType: 'webrtc', hlsAvailable: false });
         return;
       }
 
       // Fallback to HLS after a short delay
-      logMessage(`WebRTC failed for Camera ${cameraId}, falling back to HLS`);
+      logMessage(`WebRTC failed, falling back to HLS`);
       
       setTimeout(() => {
         if (currentAttempt === connectionAttemptRef.current && videoRef.current && isActive) {
@@ -96,8 +109,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
           setStreamType('hls');
           setIsConnecting(false);
           isConnectionInProgressRef.current = false;
-          logMessage(`Camera ${cameraId} connected via HLS (standard latency)`);
+          logMessage(`Connected via HLS (standard latency)`);
         } else {
+          setIsConnecting(false);
           isConnectionInProgressRef.current = false;
         }
       }, 1000);
@@ -106,32 +120,38 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
       if (currentAttempt === connectionAttemptRef.current) {
         setIsConnecting(false);
         isConnectionInProgressRef.current = false;
-        logMessage(`Connection failed for Camera ${cameraId}: ${error}`);
+        logMessage(`Connection failed: ${error}`);
       }
     }
   }, [isActive, cameraId, setupWebRTCPlayer, setupHLSPlayer, logMessage, updateState, cleanupWebRTCPlayer, cleanupHLSPlayer]);
 
-  // Main effect for handling active state changes
+  // Effect for handling active state changes
   useEffect(() => {
     if (!isActive) {
       cleanup();
       return;
     }
 
-    // Only attempt connection if video element is ready and no connection is in progress
-    if (videoRef.current && !isConnectionInProgressRef.current) {
-      attemptConnection();
-    }
+    // Reset the attempt flag when becoming active
+    hasAttemptedConnectionRef.current = false;
 
-    return cleanup;
-  }, [isActive, attemptConnection, cleanup]);
+    // Only attempt connection if video element is ready and no connection is in progress
+    if (videoRef.current && !isConnectionInProgressRef.current && !hasAttemptedConnectionRef.current) {
+      // Small delay to ensure video element is properly mounted
+      const timer = setTimeout(() => {
+        attemptConnection();
+      }, 100);
+
+      return () => clearTimeout(timer);
+    }
+  }, [isActive, cleanup, attemptConnection]);
 
   // Cleanup on unmount
   useEffect(() => {
     return cleanup;
   }, [cleanup]);
 
-  // Memoize the stream indicator to prevent unnecessary re-calculations
+  // Stream indicator
   const streamIndicator = useMemo(() => {
     if (isConnecting) return { text: 'Connecting...', color: 'text-yellow-400' };
     switch (streamType) {
@@ -151,7 +171,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
         playsInline
         controls={false}
       >
-        Your browser does not support video playbook.
+        Your browser does not support video playback.
       </video>
       
       {/* Stream type indicator */}
