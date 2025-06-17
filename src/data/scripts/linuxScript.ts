@@ -1,7 +1,7 @@
 
 export const linuxScript = `#!/bin/bash
 # JERICHO Security System - Complete Ubuntu 24.04 Installation Script
-# Updated with Node.js/npm conflict resolution
+# Updated with Node.js/npm conflict resolution and HTTP-only configuration
 
 set -e
 
@@ -14,10 +14,6 @@ echo "========================================"
 echo "🔄 Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
-# Install essential packages (without npm initially)
-echo "📦 Installing essential packages..."
-sudo apt install -y git apache2 ffmpeg sqlite3 build-essential curl wget unzip
-
 # Handle Node.js and npm installation properly
 echo "🟢 Installing Node.js 18+ and npm..."
 
@@ -29,14 +25,18 @@ curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 sudo apt install -y nodejs
 
 # Verify Node.js version and npm
-echo "Node.js version: $(node --version)"
-echo "npm version: $(npm --version)"
+echo "Node.js version: \$(node --version)"
+echo "npm version: \$(npm --version)"
 
 # If npm is missing, install it manually
 if ! command -v npm &> /dev/null; then
     echo "Installing npm manually..."
     curl -L https://www.npmjs.com/install.sh | sudo sh
 fi
+
+# Install essential packages (after Node.js)
+echo "📦 Installing essential packages..."
+sudo apt install -y git apache2 ffmpeg sqlite3 build-essential curl wget unzip
 
 # Enable required Apache modules
 echo "🔧 Configuring Apache modules..."
@@ -45,19 +45,18 @@ sudo a2enmod headers
 sudo a2enmod proxy
 sudo a2enmod proxy_http
 sudo a2enmod proxy_wstunnel
-sudo a2enmod ssl
 
 # Create project directory
 INSTALL_DIR="/opt/jericho-security"
-echo "📁 Creating installation directory: $INSTALL_DIR"
-sudo mkdir -p "$INSTALL_DIR"
-cd "$INSTALL_DIR"
+echo "📁 Creating installation directory: \$INSTALL_DIR"
+sudo mkdir -p "\$INSTALL_DIR"
+cd "\$INSTALL_DIR"
 
 # Download from GitHub
 echo "⬇️ Downloading JERICHO Security System..."
 REPO_URL="https://github.com/AbdurahmanZA/jericho-security-ad958edc.git"
 
-if sudo git clone "$REPO_URL" .; then
+if sudo git clone "\$REPO_URL" .; then
     echo "✅ Repository cloned successfully"
 else
     echo "❌ Failed to clone repository. Please ensure:"
@@ -82,7 +81,7 @@ sudo npm install --legacy-peer-deps
 cd ..
 
 # Set proper ownership
-sudo chown -R www-data:www-data "$INSTALL_DIR"
+sudo chown -R www-data:www-data "\$INSTALL_DIR"
 
 # Deploy frontend to Apache
 echo "🚀 Deploying frontend to Apache..."
@@ -90,8 +89,8 @@ sudo rm -rf /var/www/html/*
 sudo cp -r dist/* /var/www/html/
 sudo chown -R www-data:www-data /var/www/html
 
-# Create Apache virtual host configuration
-echo "⚙️ Configuring Apache virtual host..."
+# Create HTTP-only Apache virtual host configuration
+echo "⚙️ Configuring Apache virtual host for HTTP..."
 sudo tee /etc/apache2/sites-available/jericho-security.conf > /dev/null << 'EOF'
 <VirtualHost *:80>
     ServerAdmin admin@jericho.local
@@ -108,10 +107,10 @@ sudo tee /etc/apache2/sites-available/jericho-security.conf > /dev/null << 'EOF'
 
     # Serve HLS and snapshots files directly BEFORE SPA fallback
     RewriteCond %{REQUEST_URI} ^/hls/
-    RewriteRule ^.*$ - [L]
+    RewriteRule ^.*\$ - [L]
 
     RewriteCond %{REQUEST_URI} ^/snapshots/
-    RewriteRule ^.*$ - [L]
+    RewriteRule ^.*\$ - [L]
 
     # CRITICAL: Exclude /assets/ from SPA fallback
     RewriteCond %{REQUEST_URI} ^/assets/
@@ -120,7 +119,7 @@ sudo tee /etc/apache2/sites-available/jericho-security.conf > /dev/null << 'EOF'
     # SPA fallback - send everything else to index.html
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^.*$ /index.html [QSA,L]
+    RewriteRule ^.*\$ /index.html [QSA,L]
 
     # Set proper MIME types for assets
     AddType application/javascript .js
@@ -164,13 +163,13 @@ sudo tee /etc/apache2/sites-available/jericho-security.conf > /dev/null << 'EOF'
         Require all granted
 
         # Force correct MIME types for assets
-        <FilesMatch "\\.js$">
+        <FilesMatch "\\.js\$">
             ForceType application/javascript
         </FilesMatch>
-        <FilesMatch "\\.css$">
+        <FilesMatch "\\.css\$">
             ForceType text/css
         </FilesMatch>
-        <FilesMatch "\\.json$">
+        <FilesMatch "\\.json\$">
             ForceType application/json
         </FilesMatch>
     </Directory>
@@ -215,7 +214,7 @@ After=network.target
 Type=simple
 User=www-data
 Group=www-data
-WorkingDirectory=$INSTALL_DIR/backend
+WorkingDirectory=\$INSTALL_DIR/backend
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=5
@@ -235,7 +234,6 @@ sudo chown -R www-data:www-data /var/www/html/snapshots
 # Configure firewall
 echo "🔥 Configuring firewall..."
 sudo ufw allow 80/tcp comment "HTTP"
-sudo ufw allow 443/tcp comment "HTTPS"
 sudo ufw allow 3001/tcp comment "Backend API"
 
 # Install FreePBX/Asterisk for VoIP
@@ -277,7 +275,7 @@ echo "✅ JERICHO Security System Installed!"
 echo "========================================"
 echo "🌐 Frontend: http://localhost (or your server IP)"
 echo "🔧 Backend API: http://localhost:3001/api/status"
-echo "📁 Installation: $INSTALL_DIR"
+echo "📁 Installation: \$INSTALL_DIR"
 echo "📋 Logs: sudo journalctl -u jericho-backend -f"
 echo ""
 echo "🎯 Next Steps:"
@@ -298,5 +296,10 @@ echo "• Start FreePBX: sudo systemctl start asterisk"
 echo "• Stop FreePBX: sudo systemctl stop asterisk"
 echo "• FreePBX status: sudo systemctl status asterisk"
 echo "• FreePBX CLI: sudo asterisk -r"
+echo ""
+echo "🔧 Backend Troubleshooting:"
+echo "• Test backend: curl http://localhost:3001/api/status"
+echo "• Test WebSocket: Check browser dev tools for WS connection"
+echo "• Apache proxy logs: sudo tail -f /var/log/apache2/jericho_error.log"
 echo "========================================"
 `;
