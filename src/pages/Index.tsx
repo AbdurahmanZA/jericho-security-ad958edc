@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -28,7 +27,7 @@ import CameraLayoutControls from '@/components/CameraLayoutControls';
 import SystemStatusBox from '@/components/SystemStatusBox';
 import QuickActions from '@/components/QuickActions';
 import StreamLogsDrawer from '@/components/StreamLogsDrawer';
-import BackendLogsDrawer from '@/components/BackendLogsDrawer';
+import { BackendLogsDrawer } from '@/components/BackendLogsDrawer';
 
 const Index = () => {
   const [layout, setLayout] = useState(4);
