@@ -11,9 +11,9 @@ export const useWebRTC = (): WebRTCPlayer => {
   const webrtcConnectionsRef = useRef<Record<number, RTCPeerConnection>>({});
   const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+  const pendingSetupsRef = useRef<Set<number>>(new Set());
 
   const connectWebRTCSignaling = useCallback(() => {
-    // WebSocket URL for WebRTC signaling using the correct backend URL
     const wsUrl = `wss://192.168.0.138/api/ws`;
 
     console.log('Connecting to WebRTC signaling server:', wsUrl);
@@ -54,6 +54,21 @@ export const useWebRTC = (): WebRTCPlayer => {
     };
   }, [connectWebRTCSignaling]);
 
+  const cleanupWebRTCPlayer = useCallback((cameraId: number, onLog?: (msg: string) => void) => {
+    // Remove from pending setups
+    pendingSetupsRef.current.delete(cameraId);
+    
+    if (webrtcConnectionsRef.current[cameraId]) {
+      onLog?.(`Cleaning up WebRTC connection for Camera ${cameraId}`);
+      try {
+        webrtcConnectionsRef.current[cameraId].close();
+      } catch (error) {
+        console.warn(`Error closing WebRTC connection for camera ${cameraId}:`, error);
+      }
+      delete webrtcConnectionsRef.current[cameraId];
+    }
+  }, []);
+
   const setupWebRTCPlayer = useCallback(async (
     cameraId: number,
     videoElement: HTMLVideoElement,
@@ -64,15 +79,20 @@ export const useWebRTC = (): WebRTCPlayer => {
       return false;
     }
 
+    // Prevent multiple simultaneous setups for the same camera
+    if (pendingSetupsRef.current.has(cameraId)) {
+      onLog?.(`WebRTC setup already in progress for Camera ${cameraId}`);
+      return false;
+    }
+
     try {
-      if (webrtcConnectionsRef.current[cameraId]) {
-        webrtcConnectionsRef.current[cameraId].close();
-        delete webrtcConnectionsRef.current[cameraId];
-      }
+      pendingSetupsRef.current.add(cameraId);
+      
+      // Clean up any existing connection first
+      cleanupWebRTCPlayer(cameraId, onLog);
 
       onLog?.(`Setting up WebRTC for Camera ${cameraId}`);
 
-      // Use correct backend URL for WebRTC streams
       const response = await fetch(`https://192.168.0.138/api/webrtc/streams/${cameraId}/start`, { method: 'POST' });
       if (!response.ok) {
         onLog?.(`WebRTC stream not available for Camera ${cameraId}`);
@@ -146,11 +166,13 @@ export const useWebRTC = (): WebRTCPlayer => {
               })).then(() => {
                 clearTimeout(timeout);
                 wsConnection.removeEventListener('message', handleMessage);
+                pendingSetupsRef.current.delete(cameraId);
                 onLog?.(`WebRTC connected successfully for Camera ${cameraId}`);
                 resolve(true);
               }).catch((error) => {
                 clearTimeout(timeout);
                 wsConnection.removeEventListener('message', handleMessage);
+                pendingSetupsRef.current.delete(cameraId);
                 onLog?.(`WebRTC answer failed for Camera ${cameraId}: ${error}`);
                 resolve(false);
               });
@@ -164,18 +186,11 @@ export const useWebRTC = (): WebRTCPlayer => {
       });
 
     } catch (error) {
+      pendingSetupsRef.current.delete(cameraId);
       onLog?.(`WebRTC setup error for Camera ${cameraId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return false;
     }
-  }, [wsConnection]);
-
-  const cleanupWebRTCPlayer = useCallback((cameraId: number, onLog?: (msg: string) => void) => {
-    if (webrtcConnectionsRef.current[cameraId]) {
-      onLog?.(`Cleaning up WebRTC for Camera ${cameraId}`);
-      webrtcConnectionsRef.current[cameraId].close();
-      delete webrtcConnectionsRef.current[cameraId];
-    }
-  }, []);
+  }, [wsConnection, cleanupWebRTCPlayer]);
 
   useEffect(() => {
     return () => {
