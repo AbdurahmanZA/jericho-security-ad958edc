@@ -21,7 +21,9 @@ import {
   Play,
   Square,
   Eye,
-  Terminal
+  Terminal,
+  Key,
+  Bug
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -64,6 +66,14 @@ const Status = () => {
     connectedClients: 0,
     lastUpdate: new Date()
   });
+  const [apiLogs, setApiLogs] = useState<StreamLog[]>([]);
+  const [wsReconnectAttempts, setWsReconnectAttempts] = useState(0);
+  const [wsLastError, setWsLastError] = useState<string | null>(null);
+  const [backendHealth, setBackendHealth] = useState({
+    responsive: false,
+    lastCheck: new Date(),
+    responseTime: 0
+  });
   
   const wsRef = useRef<WebSocket | null>(null);
   const logIntervalRef = useRef<NodeJS.Timeout>();
@@ -80,6 +90,21 @@ const Status = () => {
     
     setStreamLogs(prev => {
       const updated = [newLog, ...prev].slice(0, 100); // Keep last 100 logs
+      return updated;
+    });
+  };
+
+  const addApiLog = (action: string, status: 'info' | 'success' | 'warning' | 'error', message: string, details?: any) => {
+    const newLog: StreamLog = {
+      timestamp: new Date(),
+      cameraId: 0,
+      action,
+      status,
+      message: details ? `${message} - ${JSON.stringify(details)}` : message
+    };
+    
+    setApiLogs(prev => {
+      const updated = [newLog, ...prev].slice(0, 50); // Keep last 50 API logs
       return updated;
     });
   };
@@ -108,7 +133,8 @@ const Status = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     
     setWsStatus('connecting');
-    addStreamLog(0, 'websocket', 'info', 'Attempting WebSocket connection for monitoring...');
+    addStreamLog(0, 'websocket', 'info', `Attempting WebSocket connection (attempt ${wsReconnectAttempts + 1})...`);
+    addApiLog('websocket_connect', 'info', 'Starting WebSocket connection', { attempt: wsReconnectAttempts + 1 });
     
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/api/ws`;
@@ -117,9 +143,22 @@ const Status = () => {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
+      // Connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+          setWsLastError('Connection timeout after 10 seconds');
+          addApiLog('websocket_error', 'error', 'WebSocket connection timeout');
+        }
+      }, 10000);
+
       ws.onopen = () => {
+        clearTimeout(connectionTimeout);
         setWsStatus('connected');
+        setWsReconnectAttempts(0);
+        setWsLastError(null);
         addStreamLog(0, 'websocket', 'success', 'WebSocket monitoring connected successfully');
+        addApiLog('websocket_open', 'success', 'WebSocket connection established', { url: wsUrl });
         
         // Send a ping to test connection
         ws.send(JSON.stringify({ type: 'monitor_ping', timestamp: Date.now() }));
@@ -131,6 +170,7 @@ const Status = () => {
           
           // Log WebSocket messages for debugging
           addStreamLog(0, 'websocket_msg', 'info', `Received: ${data.type}${data.cameraId ? ` (Camera ${data.cameraId})` : ''}`);
+          addApiLog('websocket_message', 'info', `Received message: ${data.type}`, data);
           
           switch (data.type) {
             case 'stream_started':
@@ -181,25 +221,63 @@ const Status = () => {
           }
         } catch (error) {
           addStreamLog(0, 'websocket_error', 'error', `Failed to parse WebSocket message: ${error}`);
+          addApiLog('websocket_parse_error', 'error', 'Failed to parse WebSocket message', { error: error.message, data: event.data });
         }
       };
 
       ws.onclose = (event) => {
+        clearTimeout(connectionTimeout);
         setWsStatus('disconnected');
-        addStreamLog(0, 'websocket', 'warning', `WebSocket disconnected (code: ${event.code})`);
+        const closeReasons = {
+          1000: 'Normal closure',
+          1001: 'Endpoint going away',
+          1002: 'Protocol error',
+          1003: 'Unsupported data type',
+          1006: 'Abnormal closure (network/server issue)',
+          1007: 'Invalid data',
+          1008: 'Policy violation',
+          1009: 'Message too large',
+          1010: 'Extension expected',
+          1011: 'Server error',
+          1015: 'TLS handshake failure'
+        };
         
-        // Attempt to reconnect after 3 seconds
-        setTimeout(connectWebSocket, 3000);
+        const reason = closeReasons[event.code] || `Unknown (${event.code})`;
+        setWsLastError(`${reason} - Code: ${event.code}`);
+        
+        addStreamLog(0, 'websocket', 'warning', `WebSocket disconnected: ${reason} (code: ${event.code})`);
+        addApiLog('websocket_close', 'warning', 'WebSocket connection closed', { 
+          code: event.code, 
+          reason,
+          wasClean: event.wasClean,
+          attempt: wsReconnectAttempts 
+        });
+        
+        // Exponential backoff for reconnection
+        const backoffDelay = Math.min(1000 * Math.pow(2, wsReconnectAttempts), 30000);
+        setWsReconnectAttempts(prev => prev + 1);
+        
+        setTimeout(() => {
+          if (wsReconnectAttempts < 10) { // Max 10 attempts
+            connectWebSocket();
+          } else {
+            addApiLog('websocket_reconnect_failed', 'error', 'Max reconnection attempts reached');
+          }
+        }, backoffDelay);
       };
 
-      ws.onerror = () => {
+      ws.onerror = (error) => {
         setWsStatus('error');
+        setWsLastError('WebSocket error occurred');
         addStreamLog(0, 'websocket', 'error', 'WebSocket connection error');
+        addApiLog('websocket_error', 'error', 'WebSocket error occurred', { error });
       };
 
     } catch (error) {
       setWsStatus('error');
+      setWsLastError(`Setup failed: ${error.message}`);
       addStreamLog(0, 'websocket', 'error', `WebSocket setup failed: ${error}`);
+      addApiLog('websocket_setup_error', 'error', 'WebSocket setup failed', { error: error.message });
     }
   };
 
@@ -349,15 +427,39 @@ const Status = () => {
     setChecks(checksWithTimestamp);
   };
 
-  const checkBackendServer = async () => {
+  const checkBackendHealth = async () => {
+    const startTime = Date.now();
+    addApiLog('backend_health', 'info', 'Starting backend health check');
+    
     try {
-      const response = await fetch('/api/status', { method: 'GET' });
+      const response = await fetch('/api/status', { 
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache'
+        }
+      });
+      
+      const responseTime = Date.now() - startTime;
+      
       if (response.ok) {
         const data = await response.json();
+        setBackendHealth({
+          responsive: true,
+          lastCheck: new Date(),
+          responseTime
+        });
+        
+        addApiLog('backend_health', 'success', 'Backend health check passed', {
+          responseTime: `${responseTime}ms`,
+          status: data.status,
+          activeStreams: data.activeStreams
+        });
+        
         updateCheck('backend', {
           status: 'healthy',
           message: `Backend server running (${data.status})`,
-          details: `Active streams: ${data.activeStreams}, Connected clients: ${data.connectedClients}`
+          details: `Response time: ${responseTime}ms, Active streams: ${data.activeStreams}, Connected clients: ${data.connectedClients}`
         });
         
         setRealTimeStats(prev => ({
@@ -367,22 +469,46 @@ const Status = () => {
           lastUpdate: new Date()
         }));
         
-        addStreamLog(0, 'backend_check', 'success', `Backend healthy - ${data.activeStreams} active streams`);
+        addStreamLog(0, 'backend_check', 'success', `Backend healthy - ${data.activeStreams} active streams, ${responseTime}ms response`);
       } else {
+        setBackendHealth({
+          responsive: false,
+          lastCheck: new Date(),
+          responseTime
+        });
+        
+        addApiLog('backend_health', 'error', 'Backend health check failed', {
+          status: response.status,
+          statusText: response.statusText,
+          responseTime: `${responseTime}ms`
+        });
+        
         updateCheck('backend', {
           status: 'error',
           message: `Backend server responded with ${response.status}`,
-          details: 'Server may be experiencing issues'
+          details: `${response.statusText} (${responseTime}ms)`
         });
-        addStreamLog(0, 'backend_check', 'error', `Backend responded with status ${response.status}`);
+        addStreamLog(0, 'backend_check', 'error', `Backend responded with status ${response.status} in ${responseTime}ms`);
       }
     } catch (error) {
+      setBackendHealth({
+        responsive: false,
+        lastCheck: new Date(),
+        responseTime: Date.now() - startTime
+      });
+      
+      addApiLog('backend_health', 'error', 'Backend health check failed', {
+        error: error.message,
+        type: error.name,
+        responseTime: `${Date.now() - startTime}ms`
+      });
+      
       updateCheck('backend', {
         status: 'error',
         message: 'Backend server not responding',
-        details: 'Server may not be running or network issue'
+        details: `Error: ${error.message}`
       });
-      addStreamLog(0, 'backend_check', 'error', `Backend check failed: ${error}`);
+      addStreamLog(0, 'backend_check', 'error', `Backend check failed: ${error.message}`);
     }
   };
 
@@ -401,7 +527,7 @@ const Status = () => {
 
     try {
       await Promise.allSettled([
-        checkBackendServer()
+        checkBackendHealth()
       ]);
       checkWebSocket();
     } catch (error) {
@@ -416,13 +542,61 @@ const Status = () => {
     }
   };
 
+  const testApiCredentials = async (appKey: string, appSecret: string) => {
+    addApiLog('credentials_test', 'info', 'Testing Hikvision API credentials');
+    
+    try {
+      // Test the credentials by attempting to get access token
+      const response = await fetch('https://open.ys7.com/api/lapp/token/get', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          appKey,
+          appSecret,
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (result.code === '200') {
+        addApiLog('credentials_test', 'success', 'API credentials are valid', {
+          accessToken: result.data.accessToken ? 'Received' : 'Not received',
+          expireTime: result.data.expireTime
+        });
+        return { success: true, data: result.data };
+      } else {
+        addApiLog('credentials_test', 'error', 'API credentials test failed', {
+          code: result.code,
+          message: result.msg
+        });
+        return { success: false, error: result.msg };
+      }
+    } catch (error) {
+      addApiLog('credentials_test', 'error', 'API credentials test failed', {
+        error: error.message,
+        type: error.name
+      });
+      return { success: false, error: error.message };
+    }
+  };
+
+  const testApiCredentialsPrompt = () => {
+    const appKey = prompt('Enter App Key:');
+    const appSecret = prompt('Enter App Secret:');
+    if (appKey && appSecret) {
+      testApiCredentials(appKey, appSecret);
+    }
+  };
+
   useEffect(() => {
     loadCameraConfig();
     connectWebSocket();
     runAllChecks();
 
     const interval = setInterval(() => {
-      runAllChecks();
+      checkBackendHealth();
       cameraStatuses.forEach(camera => {
         if (camera.streamStatus === 'active') {
           testCameraConnection(camera.id);
@@ -484,7 +658,11 @@ const Status = () => {
           </div>
           <div className="flex space-x-2">
             <Button 
-              onClick={connectWebSocket} 
+              onClick={() => {
+                setWsReconnectAttempts(0);
+                setWsLastError(null);
+                connectWebSocket();
+              }} 
               disabled={wsStatus === 'connecting'}
               variant="outline"
             >
@@ -506,8 +684,8 @@ const Status = () => {
           </div>
         </div>
 
-        {/* Real-time Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        {/* Enhanced Real-time Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           <Card className="bg-slate-800 border-slate-700">
             <CardHeader className="pb-2">
               <CardTitle className="text-green-500 text-sm font-medium">Healthy</CardTitle>
@@ -552,9 +730,45 @@ const Status = () => {
             </CardHeader>
             <CardContent>
               <div className="text-lg font-bold text-white capitalize">{wsStatus}</div>
+              {wsLastError && (
+                <div className="text-xs text-red-400 mt-1">{wsLastError}</div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-800 border-slate-700">
+            <CardHeader className="pb-2">
+              <CardTitle className={`text-sm font-medium ${backendHealth.responsive ? 'text-green-500' : 'text-red-500'}`}>
+                Backend
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-lg font-bold text-white">
+                {backendHealth.responsive ? 'Online' : 'Offline'}
+              </div>
+              <div className="text-xs text-slate-400">
+                {backendHealth.responseTime}ms
+              </div>
             </CardContent>
           </Card>
         </div>
+
+        {/* WebSocket Detailed Status */}
+        {wsStatus !== 'connected' && (
+          <Alert className="border-yellow-500 bg-yellow-500/10">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle className="text-yellow-400">WebSocket Connection Issue</AlertTitle>
+            <AlertDescription className="text-yellow-300">
+              {wsLastError && <div className="mb-2">Error: {wsLastError}</div>}
+              <div>Reconnect attempts: {wsReconnectAttempts}/10</div>
+              {wsReconnectAttempts >= 10 && (
+                <div className="text-red-400 mt-2">
+                  Max reconnection attempts reached. Check if the backend server is running.
+                </div>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Camera Status Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -617,6 +831,67 @@ const Status = () => {
             </Card>
           ))}
         </div>
+
+        {/* API Credentials Troubleshooting Logs */}
+        <Card className="bg-slate-800 border-slate-700">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-white flex items-center">
+                <Key className="w-5 h-5 mr-2" />
+                API Credentials & Authentication Logs
+              </CardTitle>
+              <div className="flex space-x-2">
+                <Button 
+                  onClick={() => {
+                    const appKey = prompt('Enter App Key:');
+                    const appSecret = prompt('Enter App Secret:');
+                    if (appKey && appSecret) {
+                      testApiCredentials(appKey, appSecret);
+                    }
+                  }}
+                  variant="outline"
+                  size="sm"
+                >
+                  <Bug className="w-4 h-4 mr-2" />
+                  Test Credentials
+                </Button>
+                <Button 
+                  onClick={() => setApiLogs([])}
+                  variant="outline"
+                  size="sm"
+                >
+                  Clear API Logs
+                </Button>
+              </div>
+            </div>
+            <CardDescription className="text-slate-400">
+              Debug information for Hikvision API credentials and authentication issues
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64 overflow-y-auto bg-slate-900 rounded p-4 font-mono text-sm">
+              {apiLogs.length === 0 ? (
+                <div className="text-slate-500 text-center py-8">
+                  No API logs yet. Click "Test Credentials" to verify your Hikvision App Key and Secret.
+                </div>
+              ) : (
+                apiLogs.map((log, index) => (
+                  <div key={index} className="mb-1 flex items-start space-x-3">
+                    <span className="text-slate-500 text-xs whitespace-nowrap">
+                      {log.timestamp.toLocaleTimeString()}
+                    </span>
+                    <span className="text-slate-400 text-xs min-w-[100px]">
+                      {log.action}
+                    </span>
+                    <span className={`text-xs ${getLogStatusColor(log.status)}`}>
+                      {log.message}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Stream Logs */}
         <Card className="bg-slate-800 border-slate-700">
