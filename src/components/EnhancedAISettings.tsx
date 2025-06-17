@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Brain, Eye, Mic, AlertTriangle, Zap, Settings, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { discordService } from '@/services/discordService';
 
 interface AIConfig {
   motionDetection: {
@@ -90,6 +90,12 @@ export const EnhancedAISettings: React.FC = () => {
     try {
       localStorage.setItem('jericho-enhanced-ai-config', JSON.stringify(config));
       
+      // Send Discord notification about AI settings update
+      await discordService.triggerSystemAlert(
+        'AI configuration has been updated by administrator',
+        'low'
+      );
+      
       toast({
         title: "AI Settings Saved",
         description: "AI configuration has been updated successfully",
@@ -124,6 +130,26 @@ export const EnhancedAISettings: React.FC = () => {
     { value: 'de-DE', label: 'German' }
   ];
 
+  // Simulate AI detection events for demonstration
+  const simulateDetection = async (type: string) => {
+    switch (type) {
+      case 'motion':
+        await discordService.triggerMotionAlert('Camera-01', 'Simulated motion detection event');
+        break;
+      case 'person':
+        await discordService.triggerPersonDetected('Camera-01', 95);
+        break;
+      case 'unknown':
+        await discordService.triggerUnknownPerson('Camera-01');
+        break;
+    }
+    
+    toast({
+      title: "Test Alert Sent",
+      description: `${type} detection alert sent to Discord`,
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -133,19 +159,22 @@ export const EnhancedAISettings: React.FC = () => {
             Configure advanced AI features for intelligent security monitoring
           </p>
         </div>
-        <Button onClick={saveConfig} disabled={isSaving} className="jericho-btn-primary">
-          <Save className="w-4 h-4 mr-2" />
-          {isSaving ? 'Saving...' : 'Save Settings'}
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={saveConfig} disabled={isSaving} className="jericho-btn-primary">
+            <Save className="w-4 h-4 mr-2" />
+            {isSaving ? 'Saving...' : 'Save Settings'}
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="motion" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="motion">Motion AI</TabsTrigger>
           <TabsTrigger value="facial">Facial Recognition</TabsTrigger>
           <TabsTrigger value="voice">Voice Commands</TabsTrigger>
           <TabsTrigger value="anomaly">Anomaly Detection</TabsTrigger>
           <TabsTrigger value="alerts">Smart Alerts</TabsTrigger>
+          <TabsTrigger value="test">Test Alerts</TabsTrigger>
         </TabsList>
 
         <TabsContent value="motion">
@@ -421,6 +450,55 @@ export const EnhancedAISettings: React.FC = () => {
                   </div>
                 </>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="test">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Zap className="h-5 w-5" />
+                Test AI Alerts
+              </CardTitle>
+              <CardDescription>
+                Test AI detection events and Discord notifications
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Button
+                  onClick={() => simulateDetection('motion')}
+                  variant="outline"
+                  className="h-20 flex flex-col gap-2"
+                >
+                  <Eye className="h-6 w-6" />
+                  Test Motion Detection
+                </Button>
+                <Button
+                  onClick={() => simulateDetection('person')}
+                  variant="outline"
+                  className="h-20 flex flex-col gap-2"
+                >
+                  <Brain className="h-6 w-6" />
+                  Test Person Detection
+                </Button>
+                <Button
+                  onClick={() => simulateDetection('unknown')}
+                  variant="outline"
+                  className="h-20 flex flex-col gap-2"
+                >
+                  <AlertTriangle className="h-6 w-6" />
+                  Test Unknown Person Alert
+                </Button>
+              </div>
+              <div className="p-4 border border-border rounded-lg bg-card">
+                <h5 className="font-semibold mb-2">Test Information</h5>
+                <p className="text-sm text-muted-foreground">
+                  These buttons simulate AI detection events and will send notifications to configured Discord webhooks. 
+                  Make sure you have Discord integration set up in the Integrations tab first.
+                </p>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

@@ -1,4 +1,3 @@
-
 import React from "react"
 import { Puzzle, Terminal, Users, Shield, Camera, Mic, Database, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -30,6 +29,7 @@ import ProtectedRoute from "@/components/ProtectedRoute"
 import UserProfile from "@/components/UserProfile"
 import { useAuth } from "@/contexts/AuthContext"
 import { useNavigate } from "react-router-dom"
+import { DiscordIntegration } from "@/components/DiscordIntegration"
 
 const Settings = () => {
   const { hasPermission, user } = useAuth();
@@ -215,6 +215,8 @@ const Settings = () => {
                           <HikConnectIntegration />
                           <Separator />
                           <MultiHikConnectManager />
+                          <Separator />
+                          <DiscordIntegration />
                         </div>
                       </CardContent>
                     </Card>
