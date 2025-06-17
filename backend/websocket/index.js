@@ -5,6 +5,7 @@ class WebSocketManager {
   constructor(server) {
     this.clients = new Set();
     this.webrtcConnections = new Map();
+    this.server = server;
     
     // Create a single WebSocket server to avoid conflicts
     this.wss = new WebSocket.Server({ 
@@ -23,9 +24,16 @@ class WebSocketManager {
       ws.on('message', (message) => {
         try {
           const data = JSON.parse(message.toString());
+          console.log('WebSocket message received:', data.type, data.cameraId ? `for camera ${data.cameraId}` : '');
           
+          // Handle stream control messages
+          if (data.type === 'start_stream' && data.cameraId && data.rtspUrl) {
+            this.handleStartStream(ws, data);
+          } else if (data.type === 'stop_stream' && data.cameraId) {
+            this.handleStopStream(ws, data);
+          }
           // Handle WebRTC signaling messages
-          if (data.type === 'offer' && data.cameraId) {
+          else if (data.type === 'offer' && data.cameraId) {
             console.log(`WebRTC offer received for camera ${data.cameraId}`);
             this.handleWebRTCOffer(ws, data);
           } else if (data.type === 'ice-candidate' && data.cameraId) {
@@ -66,6 +74,75 @@ class WebSocketManager {
     });
   }
 
+  // Stream control handlers
+  async handleStartStream(ws, data) {
+    const { cameraId, rtspUrl } = data;
+    console.log(`Starting stream for camera ${cameraId} with URL: ${rtspUrl}`);
+    
+    try {
+      // Make internal API call to start the stream
+      const fetch = require('node-fetch');
+      const response = await fetch(`http://localhost:3001/api/streams/${cameraId}/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ url: rtspUrl })
+      });
+
+      if (response.ok) {
+        console.log(`Stream started successfully for camera ${cameraId}`);
+        this.broadcast({
+          type: 'stream_status',
+          cameraId: parseInt(cameraId),
+          status: 'started',
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        const error = await response.text();
+        console.error(`Failed to start stream for camera ${cameraId}:`, error);
+        this.broadcast({
+          type: 'stream_error',
+          cameraId: parseInt(cameraId),
+          error: error,
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error(`Error starting stream for camera ${cameraId}:`, error);
+      this.broadcast({
+        type: 'stream_error',
+        cameraId: parseInt(cameraId),
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  async handleStopStream(ws, data) {
+    const { cameraId } = data;
+    console.log(`Stopping stream for camera ${cameraId}`);
+    
+    try {
+      const fetch = require('node-fetch');
+      const response = await fetch(`http://localhost:3001/api/streams/${cameraId}/stop`, {
+        method: 'POST'
+      });
+
+      if (response.ok) {
+        console.log(`Stream stopped successfully for camera ${cameraId}`);
+        this.broadcast({
+          type: 'stream_status',
+          cameraId: parseInt(cameraId),
+          status: 'stopped',
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error(`Error stopping stream for camera ${cameraId}:`, error);
+    }
+  }
+
   // WebRTC signaling handlers
   handleWebRTCOffer(ws, data) {
     const { cameraId, sdp } = data;
@@ -99,6 +176,7 @@ class WebSocketManager {
   // Broadcast to all connected clients
   broadcast(data) {
     const message = JSON.stringify(data);
+    console.log('Broadcasting message:', data.type, data.cameraId ? `for camera ${data.cameraId}` : '');
     this.clients.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(message);

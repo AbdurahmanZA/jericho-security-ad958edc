@@ -9,14 +9,42 @@ const router = express.Router();
 // Stream control
 router.post('/:cameraId/start', (req, res) => {
   const cameraId = req.params.cameraId;
+  const { url } = req.body; // Get URL from request body
   const db = req.app.get('db');
   const activeStreams = req.app.get('activeStreams');
   const wsManager = req.app.get('wsManager');
   
-  // Get camera details
+  console.log(`Starting stream for camera ${cameraId} with URL: ${url}`);
+
+  // If URL is provided, store/update the camera in database
+  if (url) {
+    db.run('INSERT OR REPLACE INTO cameras (id, name, url, enabled) VALUES (?, ?, ?, ?)',
+      [cameraId, `Camera ${cameraId}`, url, 1], (err) => {
+        if (err) {
+          console.error(`Error storing camera ${cameraId}:`, err);
+        } else {
+          console.log(`Camera ${cameraId} stored/updated in database`);
+        }
+      });
+  }
+
+  // Get camera details (either just stored or existing)
   db.get('SELECT * FROM cameras WHERE id = ?', [cameraId], (err, camera) => {
-    if (err || !camera) {
-      res.status(404).json({ error: 'Camera not found' });
+    if (err) {
+      console.error(`Database error for camera ${cameraId}:`, err);
+      res.status(500).json({ error: 'Database error' });
+      return;
+    }
+    
+    if (!camera && !url) {
+      console.log(`Camera ${cameraId} not found and no URL provided`);
+      res.status(404).json({ error: 'Camera not found and no URL provided' });
+      return;
+    }
+
+    const streamUrl = url || camera.url;
+    if (!streamUrl) {
+      res.status(400).json({ error: 'No stream URL available' });
       return;
     }
 
@@ -30,8 +58,10 @@ router.post('/:cameraId/start', (req, res) => {
       fs.mkdirSync(hlsDir, { recursive: true });
     }
 
+    console.log(`Starting FFmpeg for camera ${cameraId} with URL: ${streamUrl}`);
+
     const ffmpegArgs = [
-      '-i', camera.url,
+      '-i', streamUrl,
       '-c:v', 'libx264',
       '-c:a', 'aac',
       '-f', 'hls',
@@ -44,10 +74,19 @@ router.post('/:cameraId/start', (req, res) => {
 
     const ffmpeg = spawn('ffmpeg', ffmpegArgs);
     
+    ffmpeg.stdout.on('data', (data) => {
+      console.log(`FFmpeg stdout for camera ${cameraId}: ${data}`);
+    });
+
+    ffmpeg.stderr.on('data', (data) => {
+      console.log(`FFmpeg stderr for camera ${cameraId}: ${data}`);
+    });
+    
     ffmpeg.on('spawn', () => {
+      console.log(`FFmpeg process spawned for camera ${cameraId}`);
       activeStreams.set(parseInt(cameraId), {
         process: ffmpeg,
-        camera: camera,
+        camera: camera || { id: cameraId, url: streamUrl },
         hlsPath: hlsPath,
         startTime: new Date()
       });
