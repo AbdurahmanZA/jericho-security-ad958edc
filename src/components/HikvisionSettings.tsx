@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Plus, Trash2, TestTube, Wifi, WifiOff, Save, Camera, Cloud, Eye, Link, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { HikConnectIntegration } from '@/components/HikConnectIntegration';
 
 interface HikvisionCamera {
   id: string;
@@ -329,7 +329,7 @@ export const HikvisionSettings: React.FC = () => {
         <div>
           <h3 className="text-lg font-bold uppercase tracking-wide">Hikvision Camera Setup</h3>
           <p className="text-sm text-muted-foreground mt-1">
-            Configure Hikvision cameras, EZVIZ and HikConnect cloud accounts
+            Configure Hikvision cameras, EZVIZ, HikConnect cloud accounts, and production API integration
           </p>
         </div>
       </div>
@@ -337,7 +337,7 @@ export const HikvisionSettings: React.FC = () => {
       {/* Global Alert about streaming capabilities */}
       <Alert>
         <AlertTriangle className="h-4 w-4" />
-        <AlertTitle>Streaming Status</AlertTitle>
+        <AlertTitle>Integration Status</AlertTitle>
         <AlertDescription className="text-sm">
           <div className="space-y-2 mt-2">
             <div className="flex items-center space-x-2">
@@ -345,15 +345,23 @@ export const HikvisionSettings: React.FC = () => {
               <span><strong>RTSP Cameras:</strong> Full WebRTC + HLS streaming support (Ready to use)</span>
             </div>
             <div className="flex items-center space-x-2">
+              <CheckCircle className="w-4 h-4 text-green-500" />
+              <span><strong>Hik-Connect API:</strong> Production-ready integration with live streaming</span>
+            </div>
+            <div className="flex items-center space-x-2">
               <AlertTriangle className="w-4 h-4 text-amber-500" />
-              <span><strong>Cloud Cameras (EZVIZ/HikConnect):</strong> Configuration only - requires API integration for streaming</span>
+              <span><strong>EZVIZ Cloud:</strong> Configuration only - requires API integration for streaming</span>
             </div>
           </div>
         </AlertDescription>
       </Alert>
 
-      <Tabs defaultValue="cameras" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+      <Tabs defaultValue="hikconnect" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="hikconnect" className="flex items-center space-x-2">
+            <Link className="w-4 h-4" />
+            <span>Hik-Connect API</span>
+          </TabsTrigger>
           <TabsTrigger value="cameras" className="flex items-center space-x-2">
             <Camera className="w-4 h-4" />
             <span>All Cameras</span>
@@ -367,6 +375,34 @@ export const HikvisionSettings: React.FC = () => {
             <span>RTSP Setup</span>
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="hikconnect">
+          <HikConnectIntegration 
+            onDevicesUpdate={(hikDevices) => {
+              // Convert Hik-Connect devices to local camera format and add them
+              const newCameras = hikDevices.map((device, index) => ({
+                id: `hikconnect_${device.deviceSerial}`,
+                name: device.deviceName,
+                ip: '', // Cloud devices don't need IP
+                port: 0,
+                username: '',
+                password: '',
+                enabled: true,
+                connected: device.status === 'online',
+                events: ['VMD'],
+                type: 'hikconnect' as const,
+                cloudDeviceId: device.deviceSerial
+              }));
+              
+              // Update the cameras list with Hik-Connect devices
+              const updatedCameras = [
+                ...cameras.filter(c => c.type !== 'hikconnect'),
+                ...newCameras
+              ];
+              saveCameras(updatedCameras);
+            }}
+          />
+        </TabsContent>
 
         <TabsContent value="cameras" className="space-y-4">
           <div className="flex items-center justify-between">

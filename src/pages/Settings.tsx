@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
-import { ArrowLeft, Shield, Settings as SettingsIcon, Camera, Brain, Phone, Database } from 'lucide-react';
+import { ArrowLeft, Shield, Settings as SettingsIcon, Camera, Brain, Phone, Database, Globe } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { HikvisionSettings } from '@/components/HikvisionSettings';
 import { AISettings } from '@/components/AISettings';
@@ -19,6 +19,7 @@ import { StreamSettings } from '@/components/StreamSettings';
 import { EmergencyContacts } from '@/components/EmergencyContacts';
 import { BackupRestore } from '@/components/BackupRestore';
 import { SipSettings } from '@/components/SipSettings';
+import { HikvisionApiEndpoints } from '@/components/HikvisionApiEndpoints';
 import { Link } from 'react-router-dom';
 import InstallationScripts from '@/components/InstallationScripts';
 
@@ -69,6 +70,7 @@ const Settings = () => {
                     <p>• SIP & VoIP Configuration</p>
                     <p>• Emergency Contacts</p>
                     <p>• Backup & Restore</p>
+                    <p>• API Documentation</p>
                   </div>
                 </div>
               </div>
@@ -88,10 +90,14 @@ const Settings = () => {
 
             <main className="flex-1 p-6 bg-background">
               <Tabs defaultValue="hikvision" className="space-y-6">
-                <TabsList className="grid w-full grid-cols-7">
+                <TabsList className="grid w-full grid-cols-8">
                   <TabsTrigger value="hikvision" className="flex items-center space-x-2">
                     <Camera className="w-4 h-4" />
                     <span>Hikvision</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="api" className="flex items-center space-x-2">
+                    <Globe className="w-4 h-4" />
+                    <span>API Docs</span>
                   </TabsTrigger>
                   <TabsTrigger value="ai" className="flex items-center space-x-2">
                     <Brain className="w-4 h-4" />
@@ -122,6 +128,12 @@ const Settings = () => {
                 <TabsContent value="hikvision">
                   <Card className="p-6">
                     <HikvisionSettings />
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="api">
+                  <Card className="p-6">
+                    <HikvisionApiEndpoints />
                   </Card>
                 </TabsContent>
 
