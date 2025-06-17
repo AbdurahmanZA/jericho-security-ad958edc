@@ -30,6 +30,8 @@ import UserProfile from "@/components/UserProfile"
 import { useAuth } from "@/contexts/AuthContext"
 import { useNavigate } from "react-router-dom"
 import { DiscordIntegration } from "@/components/DiscordIntegration"
+import { KnowledgeBase } from "@/components/KnowledgeBase"
+import { CameraAISettings } from "@/components/CameraAISettings"
 
 const Settings = () => {
   const { hasPermission, user } = useAuth();
