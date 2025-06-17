@@ -88,19 +88,26 @@ sudo mkdir -p /opt/jericho-backend
 sudo cp -r backend/* /opt/jericho-backend/
 sudo chown -R www-data:www-data /opt/jericho-backend
 
-# Install backend dependencies
+# Install backend dependencies (including node-fetch fix)
 echo "Installing backend dependencies..."
 cd /opt/jericho-backend
 sudo npm install
+
+# Install missing node-fetch dependency that was causing WebSocket errors
+echo "Installing missing node-fetch dependency..."
+sudo npm install node-fetch@2.7.0
 
 # Create HLS and snapshots directories with proper permissions and symlinks
 echo "Setting up HLS and snapshots directories..."
 sudo mkdir -p /opt/jericho-backend/hls
 sudo mkdir -p /opt/jericho-backend/snapshots
+sudo mkdir -p /opt/jericho-backend/data
 sudo chown -R www-data:www-data /opt/jericho-backend/hls
 sudo chown -R www-data:www-data /opt/jericho-backend/snapshots
+sudo chown -R www-data:www-data /opt/jericho-backend/data
 sudo chmod 755 /opt/jericho-backend/hls
 sudo chmod 755 /opt/jericho-backend/snapshots
+sudo chmod 755 /opt/jericho-backend/data
 
 # Create symlinks so Apache can serve the files
 sudo ln -sf /opt/jericho-backend/hls /var/www/html/hls
@@ -346,4 +353,5 @@ echo "=================================="
 
 echo "\\n🟢 HTTPS ACCESS: If you have a domain pointing to this server, update the DOMAIN variable in this script and rerun."
 echo "\\n🔄 VoIP is configured with GSM codec support (default) for reliable emergency communications."
-echo "\\n✅ HLS serving and WebSocket proxy are now properly configured with CORS headers and MIME types for better browser compatibility."`;
+echo "\\n✅ HLS serving and WebSocket proxy are now properly configured with CORS headers and MIME types for better browser compatibility."
+echo "\\n🔧 Fixed: Added node-fetch dependency to prevent WebSocket stream start errors."`;
