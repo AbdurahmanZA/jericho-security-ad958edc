@@ -1,3 +1,4 @@
+
 import React from "react"
 import { Puzzle, Terminal, Users, Shield, Camera, Mic, Database, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -16,10 +17,13 @@ import {
 } from "@/components/ui/sidebar"
 import { HikConnectIntegration } from "@/components/HikConnectIntegration"
 import { HikvisionSettings } from "@/components/HikvisionSettings"
+import { MultiHikConnectManager } from "@/components/MultiHikConnectManager"
 import InstallationScripts from "@/components/InstallationScripts"
 import { SipSettings } from "@/components/SipSettings"
 import { BackupRestore } from "@/components/BackupRestore"
 import { AISettings } from "@/components/AISettings"
+import { EnhancedAISettings } from "@/components/EnhancedAISettings"
+import { PasswordManager } from "@/components/PasswordManager"
 import LeadManagement from "@/components/LeadManagement"
 import { EmergencyContacts } from "@/components/EmergencyContacts"
 import ProtectedRoute from "@/components/ProtectedRoute"
@@ -30,6 +34,7 @@ import { useNavigate } from "react-router-dom"
 const Settings = () => {
   const { hasPermission, user } = useAuth();
   const navigate = useNavigate();
+  const isSuperUser = user?.role === 'superuser';
 
   return (
     <SidebarProvider>
@@ -61,7 +66,7 @@ const Settings = () => {
             </SidebarGroup>
 
             <SidebarGroup>
-              <SidebarGroupLabel>Quick Settings</SidebarGroupLabel>
+              <SidebarGroupLabel>User Information</SidebarGroupLabel>
               <SidebarGroupContent>
                 <div className="text-sm text-slate-400 space-y-2">
                   <div>User: {user?.username}</div>
@@ -106,38 +111,48 @@ const Settings = () => {
           {/* Main Content */}
           <div className="flex-1 container mx-auto px-6 py-8">
             <Tabs defaultValue="cameras" className="space-y-6">
-              <TabsList className="grid w-full grid-cols-4 lg:grid-cols-8">
+              <TabsList className={`grid w-full ${isSuperUser ? 'grid-cols-8' : 'grid-cols-4'}`}>
                 <TabsTrigger value="cameras" className="flex items-center gap-2">
                   <Camera className="w-4 h-4" />
                   Cameras
                 </TabsTrigger>
                 <TabsTrigger value="streams">Streams</TabsTrigger>
-                <TabsTrigger value="sip" className="flex items-center gap-2">
-                  <Mic className="w-4 h-4" />
-                  SIP/VoIP
-                </TabsTrigger>
                 {hasPermission('integrations') && (
                   <TabsTrigger value="integrations" className="flex items-center gap-2">
                     <Puzzle className="w-4 h-4" />
                     Integrations
                   </TabsTrigger>
                 )}
-                <TabsTrigger value="scripts" className="flex items-center gap-2">
-                  <Terminal className="w-4 h-4" />
-                  Scripts
-                </TabsTrigger>
-                <TabsTrigger value="users" className="flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  Users
-                </TabsTrigger>
-                <TabsTrigger value="backup" className="flex items-center gap-2">
-                  <Database className="w-4 h-4" />
-                  Backup
+                <TabsTrigger value="ai" className="flex items-center gap-2">
+                  <Shield className="w-4 h-4" />
+                  AI System
                 </TabsTrigger>
                 <TabsTrigger value="profile" className="flex items-center gap-2">
                   <Shield className="w-4 h-4" />
                   Profile
                 </TabsTrigger>
+                
+                {/* Superuser-only tabs */}
+                {isSuperUser && (
+                  <>
+                    <TabsTrigger value="sip" className="flex items-center gap-2">
+                      <Mic className="w-4 h-4" />
+                      SIP/VoIP
+                    </TabsTrigger>
+                    <TabsTrigger value="scripts" className="flex items-center gap-2">
+                      <Terminal className="w-4 h-4" />
+                      Scripts
+                    </TabsTrigger>
+                    <TabsTrigger value="users" className="flex items-center gap-2">
+                      <Users className="w-4 h-4" />
+                      Users
+                    </TabsTrigger>
+                    <TabsTrigger value="backup" className="flex items-center gap-2">
+                      <Database className="w-4 h-4" />
+                      Backup
+                    </TabsTrigger>
+                  </>
+                )}
               </TabsList>
 
               <TabsContent value="cameras" className="space-y-6">
@@ -180,10 +195,6 @@ const Settings = () => {
                 </Card>
               </TabsContent>
 
-              <TabsContent value="sip" className="space-y-6">
-                <SipSettings />
-              </TabsContent>
-
               {hasPermission('integrations') && (
                 <TabsContent value="integrations" className="space-y-6">
                   <ProtectedRoute requiredModule="integrations">
@@ -202,6 +213,8 @@ const Settings = () => {
                           <HikvisionSettings />
                           <Separator />
                           <HikConnectIntegration />
+                          <Separator />
+                          <MultiHikConnectManager />
                         </div>
                       </CardContent>
                     </Card>
@@ -209,39 +222,20 @@ const Settings = () => {
                 </TabsContent>
               )}
 
-              <TabsContent value="scripts" className="space-y-6">
+              <TabsContent value="ai" className="space-y-6">
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <Terminal className="h-5 w-5" />
-                      Installation Scripts
+                      <Shield className="h-5 w-5" />
+                      AI & Machine Learning
                     </CardTitle>
                     <CardDescription>
-                      Download and run installation scripts for various platforms
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <InstallationScripts />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="users" className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Users className="h-5 w-5" />
-                      User Management
-                    </CardTitle>
-                    <CardDescription>
-                      Manage system users, roles, and permissions
+                      Configure artificial intelligence and automation features
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-6">
-                      <LeadManagement />
-                      <Separator />
-                      <EmergencyContacts />
+                      <EnhancedAISettings />
                       <Separator />
                       <AISettings />
                     </div>
@@ -249,26 +243,83 @@ const Settings = () => {
                 </Card>
               </TabsContent>
 
-              <TabsContent value="backup" className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Database className="h-5 w-5" />
-                      Backup & Restore
-                    </CardTitle>
-                    <CardDescription>
-                      Backup system configuration and restore from previous backups
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <BackupRestore />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
               <TabsContent value="profile" className="space-y-6">
                 <UserProfile />
               </TabsContent>
+
+              {/* Superuser-only content */}
+              {isSuperUser && (
+                <>
+                  <TabsContent value="sip" className="space-y-6">
+                    <ProtectedRoute requiredModule="sip">
+                      <SipSettings />
+                    </ProtectedRoute>
+                  </TabsContent>
+
+                  <TabsContent value="scripts" className="space-y-6">
+                    <ProtectedRoute requiredModule="scripts">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <Terminal className="h-5 w-5" />
+                            Installation Scripts
+                          </CardTitle>
+                          <CardDescription>
+                            Download and run installation scripts for various platforms
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <InstallationScripts />
+                        </CardContent>
+                      </Card>
+                    </ProtectedRoute>
+                  </TabsContent>
+
+                  <TabsContent value="users" className="space-y-6">
+                    <ProtectedRoute requiredModule="users">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <Users className="h-5 w-5" />
+                            User Management
+                          </CardTitle>
+                          <CardDescription>
+                            Manage system users, roles, and permissions
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-6">
+                            <PasswordManager />
+                            <Separator />
+                            <LeadManagement />
+                            <Separator />
+                            <EmergencyContacts />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </ProtectedRoute>
+                  </TabsContent>
+
+                  <TabsContent value="backup" className="space-y-6">
+                    <ProtectedRoute requiredModule="backup">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <Database className="h-5 w-5" />
+                            Backup & Restore
+                          </CardTitle>
+                          <CardDescription>
+                            Backup system configuration and restore from previous backups
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <BackupRestore />
+                        </CardContent>
+                      </Card>
+                    </ProtectedRoute>
+                  </TabsContent>
+                </>
+              )}
             </Tabs>
           </div>
         </main>

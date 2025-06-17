@@ -40,6 +40,7 @@ export const authService = {
     const user: User = {
       ...userRecord.user,
       lastLogin: new Date(),
+      permissions: this.getUserPermissions(userRecord.user.role),
     };
 
     // Store in localStorage (in production, use secure tokens)
@@ -67,18 +68,30 @@ export const authService = {
     localStorage.removeItem('jericho_session');
   },
 
+  getUserPermissions(role: string): string[] {
+    switch (role) {
+      case 'superuser':
+        return [
+          'integrations', 'hikvision-setup', 'hik-connect', 'multi-hik-connect',
+          'sip', 'voip', 'scripts', 'users', 'backup', 'password-management',
+          'ai-settings', 'enhanced-ai', 'cameras', 'streams'
+        ];
+      case 'admin':
+        return ['cameras', 'streams', 'ai-settings'];
+      case 'user':
+        return ['cameras'];
+      default:
+        return [];
+    }
+  },
+
   hasPermission(user: User | null, module: string): boolean {
     if (!user || !user.isActive) return false;
     
     // Superuser has access to everything
     if (user.role === 'superuser') return true;
     
-    // Admin users cannot access integrations
-    if (user.role === 'admin') {
-      const restrictedModules = ['integrations', 'hikvision-setup', 'hik-connect'];
-      return !restrictedModules.includes(module.toLowerCase());
-    }
-    
-    return false;
+    // Check specific permissions
+    return user.permissions?.includes(module) || false;
   }
 };
