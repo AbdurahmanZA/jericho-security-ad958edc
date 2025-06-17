@@ -4,6 +4,7 @@ const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const http = require('http');
+const fs = require('fs');
 
 // Import modular components
 const WebSocketManager = require('./websocket');
@@ -20,9 +21,30 @@ const server = http.createServer(app);
 app.use(cors());
 app.use(express.json());
 
-// Initialize SQLite database
-const dbPath = path.join(__dirname, 'jericho.db');
-const db = new sqlite3.Database(dbPath);
+// Create data directory if it doesn't exist
+const dataDir = path.join(__dirname, 'data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+// Initialize SQLite database with proper path
+const dbPath = path.join(dataDir, 'jericho.db');
+console.log('Database path:', dbPath);
+
+let db;
+try {
+  db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+      console.error('Error opening database:', err);
+      process.exit(1);
+    } else {
+      console.log('Connected to SQLite database at:', dbPath);
+    }
+  });
+} catch (error) {
+  console.error('Failed to create database:', error);
+  process.exit(1);
+}
 
 // Initialize database tables
 db.serialize(() => {
@@ -86,8 +108,15 @@ app.use('/api/streams', streamRoutes);
 app.use('/api/webrtc', webrtcRoutes);
 app.use('/api/sip', initializeSipRoutes(db));
 
+// Create HLS directory if it doesn't exist
+const hlsDir = path.join(__dirname, 'hls');
+if (!fs.existsSync(hlsDir)) {
+  fs.mkdirSync(hlsDir, { recursive: true });
+  console.log('Created HLS directory:', hlsDir);
+}
+
 // Serve static HLS files
-app.use('/hls', express.static(path.join(__dirname, 'hls')));
+app.use('/hls', express.static(hlsDir));
 
 // Basic API routes
 app.get('/api/status', (req, res) => {
@@ -142,7 +171,9 @@ process.on('SIGTERM', () => {
   }
   
   // Close database
-  db.close();
+  if (db) {
+    db.close();
+  }
   
   // Close server
   server.close(() => {
