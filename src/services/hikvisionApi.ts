@@ -1,4 +1,3 @@
-
 export interface HikvisionCredentials {
   appKey: string;
   appSecret: string;
@@ -60,6 +59,10 @@ export class HikvisionApiService {
 
   setCredentials(credentials: HikvisionCredentials) {
     this.credentials = credentials;
+  }
+
+  getCredentials(): HikvisionCredentials | null {
+    return this.credentials;
   }
 
   private async makeRequest<T = any>(

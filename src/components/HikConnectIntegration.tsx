@@ -92,7 +92,7 @@ export const HikConnectIntegration: React.FC<HikConnectIntegrationProps> = ({ on
       
       setApiService(service);
       setIsConnected(true);
-      saveCredentials(service.credentials || credentials);
+      saveCredentials(service.getCredentials() || credentials);
       
       toast({
         title: "Connected Successfully",
