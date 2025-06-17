@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -110,8 +109,7 @@ const Status = () => {
   const checkBackendServer = async () => {
     try {
       const response = await fetch('https://192.168.0.138/api/status', {
-        method: 'GET',
-        timeout: 5000
+        method: 'GET'
       });
 
       if (response.ok) {
