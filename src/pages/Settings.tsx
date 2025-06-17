@@ -1,4 +1,3 @@
-
 import React from "react"
 import { Puzzle, Terminal, Users, Shield, Camera, Mic, Database, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -17,11 +16,11 @@ import {
 } from "@/components/ui/sidebar"
 import { HikConnectIntegration } from "@/components/HikConnectIntegration"
 import { HikvisionSettings } from "@/components/HikvisionSettings"
-import { InstallationScripts } from "@/components/InstallationScripts"
+import InstallationScripts from "@/components/InstallationScripts"
 import { SipSettings } from "@/components/SipSettings"
 import { BackupRestore } from "@/components/BackupRestore"
 import { AISettings } from "@/components/AISettings"
-import { LeadManagement } from "@/components/LeadManagement"
+import LeadManagement from "@/components/LeadManagement"
 import { EmergencyContacts } from "@/components/EmergencyContacts"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import UserProfile from "@/components/UserProfile"

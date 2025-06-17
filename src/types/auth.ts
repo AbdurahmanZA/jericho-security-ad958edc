@@ -7,6 +7,7 @@ export interface User {
   email: string;
   lastLogin?: Date;
   isActive: boolean;
+  permissions?: string[];
 }
 
 export interface AuthContextType {
