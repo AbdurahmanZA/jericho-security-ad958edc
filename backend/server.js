@@ -1,3 +1,4 @@
+
 const express = require('express');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
@@ -6,17 +7,18 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const WebSocket = require('ws');
 const http = require('http');
-const WebRTCSignalingServer = require('./webrtc-signaling');
 
 // Import route modules
 const { initializeSipRoutes } = require('./routes/sip');
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
 
-// Initialize WebRTC signaling server
-const webrtcSignaling = new WebRTCSignalingServer(server);
+// Create a single WebSocket server to avoid conflicts
+const wss = new WebSocket.Server({ 
+  server,
+  path: '/api/ws'
+});
 
 // Middleware
 app.use(cors());
@@ -72,15 +74,43 @@ db.serialize(() => {
 // Store active streams and WebSocket connections
 const activeStreams = new Map();
 const clients = new Set();
+const webrtcConnections = new Map();
 
-// WebSocket connection handling
-wss.on('connection', (ws) => {
+// Single WebSocket connection handling for both general and WebRTC signaling
+wss.on('connection', (ws, req) => {
   console.log('New WebSocket connection established');
   clients.add(ws);
+
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message.toString());
+      
+      // Handle WebRTC signaling messages
+      if (data.type === 'offer' && data.cameraId) {
+        console.log(`WebRTC offer received for camera ${data.cameraId}`);
+        handleWebRTCOffer(ws, data);
+      } else if (data.type === 'ice-candidate' && data.cameraId) {
+        console.log(`ICE candidate received for camera ${data.cameraId}`);
+        handleICECandidate(ws, data);
+      } else if (data.type === 'answer' && data.cameraId) {
+        console.log(`WebRTC answer received for camera ${data.cameraId}`);
+        handleWebRTCAnswer(ws, data);
+      }
+    } catch (error) {
+      console.error('WebSocket message parse error:', error);
+    }
+  });
 
   ws.on('close', () => {
     console.log('WebSocket connection closed');
     clients.delete(ws);
+    
+    // Clean up any WebRTC connections for this client
+    for (const [key, connection] of webrtcConnections) {
+      if (connection.ws === ws) {
+        webrtcConnections.delete(key);
+      }
+    }
   });
 
   ws.on('error', (error) => {
@@ -95,6 +125,36 @@ wss.on('connection', (ws) => {
     timestamp: new Date().toISOString()
   }));
 });
+
+// WebRTC signaling handlers
+function handleWebRTCOffer(ws, data) {
+  const { cameraId, sdp } = data;
+  
+  // Store the WebRTC connection
+  webrtcConnections.set(`${cameraId}-${Date.now()}`, {
+    ws,
+    cameraId,
+    type: 'offer'
+  });
+  
+  // For now, send back a simple response
+  // In a full implementation, this would interface with a media server
+  ws.send(JSON.stringify({
+    type: 'webrtc_response',
+    cameraId,
+    message: 'Offer received, WebRTC signaling ready'
+  }));
+}
+
+function handleICECandidate(ws, data) {
+  const { cameraId, candidate } = data;
+  console.log(`ICE candidate for camera ${cameraId}:`, candidate);
+}
+
+function handleWebRTCAnswer(ws, data) {
+  const { cameraId, sdp } = data;
+  console.log(`WebRTC answer for camera ${cameraId}`);
+}
 
 // Broadcast to all connected clients
 function broadcast(data) {
@@ -353,7 +413,7 @@ const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
   console.log(`Jericho Security Backend Server running on port ${PORT}`);
-  console.log(`WebSocket server ready for connections`);
+  console.log(`WebSocket server ready for connections at /api/ws`);
   console.log(`SIP/VoIP API available at /api/sip`);
 });
 
