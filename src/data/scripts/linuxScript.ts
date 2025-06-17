@@ -1,7 +1,7 @@
 
 export const linuxScript = `#!/bin/bash
 # JERICHO Security System - Complete Ubuntu 24.04 Installation Script
-# Updated with all latest fixes for WebSocket, Apache, and HLS streaming
+# Updated with Node.js/npm conflict resolution
 
 set -e
 
@@ -14,15 +14,28 @@ echo "========================================"
 echo "🔄 Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
-# Install essential packages
+# Install essential packages (without npm initially)
 echo "📦 Installing essential packages..."
-sudo apt install -y git nodejs npm apache2 ffmpeg sqlite3 build-essential curl wget unzip
+sudo apt install -y git apache2 ffmpeg sqlite3 build-essential curl wget unzip
 
-# Install Node.js 18+ if needed
-if ! node --version | grep -q "v1[89]\\|v[2-9][0-9]"; then
-    echo "🟢 Installing Node.js 18..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-    sudo apt install -y nodejs
+# Handle Node.js and npm installation properly
+echo "🟢 Installing Node.js 18+ and npm..."
+
+# Remove any conflicting packages
+sudo apt remove -y nodejs npm || true
+
+# Install Node.js 18 from NodeSource
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Verify Node.js version and npm
+echo "Node.js version: $(node --version)"
+echo "npm version: $(npm --version)"
+
+# If npm is missing, install it manually
+if ! command -v npm &> /dev/null; then
+    echo "Installing npm manually..."
+    curl -L https://www.npmjs.com/install.sh | sudo sh
 fi
 
 # Enable required Apache modules
@@ -56,7 +69,7 @@ fi
 
 # Install frontend dependencies
 echo "📦 Installing frontend dependencies..."
-sudo npm install
+sudo npm install --legacy-peer-deps
 
 # Build frontend
 echo "🏗️ Building frontend application..."
@@ -65,7 +78,7 @@ sudo npm run build
 # Install backend dependencies
 echo "📦 Installing backend dependencies..."
 cd backend
-sudo npm install
+sudo npm install --legacy-peer-deps
 cd ..
 
 # Set proper ownership
@@ -83,7 +96,6 @@ sudo tee /etc/apache2/sites-available/jericho-security.conf > /dev/null << 'EOF'
 <VirtualHost *:80>
     ServerAdmin admin@jericho.local
     ServerName jericho.local
-    ServerAlias 192.168.0.138
     DocumentRoot /var/www/html
 
     # Enable CORS for all requests
@@ -173,7 +185,7 @@ sudo tee /etc/apache2/sites-available/jericho-security.conf > /dev/null << 'EOF'
     ProxyPreserveHost On
     ProxyRequests Off
 
-    # WebSocket proxy for /api/ws (using ws:// not wss://)
+    # WebSocket proxy for /api/ws
     ProxyPass /api/ws ws://localhost:3001/api/ws
     ProxyPassReverse /api/ws ws://localhost:3001/api/ws
 
@@ -226,6 +238,24 @@ sudo ufw allow 80/tcp comment "HTTP"
 sudo ufw allow 443/tcp comment "HTTPS"
 sudo ufw allow 3001/tcp comment "Backend API"
 
+# Install FreePBX/Asterisk for VoIP
+echo "📞 Installing FreePBX/Asterisk for VoIP support..."
+sudo apt install -y asterisk asterisk-modules asterisk-config asterisk-dev
+
+# Configure sudo permissions for backend management
+sudo tee /etc/sudoers.d/jericho-backend > /dev/null << 'EOF'
+# Allow www-data to manage backend services and FreePBX
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl start jericho-backend
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl stop jericho-backend
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart jericho-backend
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl status jericho-backend
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl start asterisk
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl stop asterisk
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart asterisk
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl status asterisk
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/asterisk -rx *
+EOF
+
 # Enable and start services
 echo "🚀 Starting services..."
 sudo systemctl daemon-reload
@@ -242,19 +272,6 @@ else
     echo "⚠️ Backend may need more time to start"
 fi
 
-# Install Asterisk for VoIP (optional)
-echo "📞 Installing Asterisk for VoIP support..."
-sudo apt install -y asterisk asterisk-modules asterisk-config
-
-# Configure sudo permissions for backend management
-sudo tee /etc/sudoers.d/jericho-backend > /dev/null << 'EOF'
-# Allow www-data to manage backend services
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl start jericho-backend
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl stop jericho-backend
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart jericho-backend
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl status jericho-backend
-EOF
-
 echo "========================================"
 echo "✅ JERICHO Security System Installed!"
 echo "========================================"
@@ -266,7 +283,7 @@ echo ""
 echo "🎯 Next Steps:"
 echo "1. Access the web interface at http://localhost"
 echo "2. Add your camera RTSP URLs in the interface"
-echo "3. Configure SIP/VoIP settings if needed"
+echo "3. Configure FreePBX settings if needed"
 echo "4. Test HLS streaming functionality"
 echo ""
 echo "🔧 Service Management:"
@@ -275,5 +292,11 @@ echo "• Stop backend: sudo systemctl stop jericho-backend"
 echo "• Restart backend: sudo systemctl restart jericho-backend"
 echo "• Check status: sudo systemctl status jericho-backend"
 echo "• View logs: sudo journalctl -u jericho-backend -f"
+echo ""
+echo "📞 FreePBX Management:"
+echo "• Start FreePBX: sudo systemctl start asterisk"
+echo "• Stop FreePBX: sudo systemctl stop asterisk"
+echo "• FreePBX status: sudo systemctl status asterisk"
+echo "• FreePBX CLI: sudo asterisk -r"
 echo "========================================"
 `;
