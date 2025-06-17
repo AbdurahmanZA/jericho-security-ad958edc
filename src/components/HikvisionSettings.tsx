@@ -1,992 +1,217 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Plus, Trash2, TestTube, Wifi, WifiOff, Save, Camera, Cloud, Eye, Link, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { 
+  Cloud, 
+  Key, 
+  Shield, 
+  CheckCircle, 
+  XCircle, 
+  RefreshCw, 
+  Camera,
+  Settings,
+  Users,
+  Globe,
+  Info
+} from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { HikConnectIntegration } from '@/components/HikConnectIntegration';
-
-interface HikvisionCamera {
-  id: string;
-  name: string;
-  ip: string;
-  port: number;
-  username: string;
-  password: string;
-  enabled: boolean;
-  connected: boolean;
-  events: string[];
-  type: 'rtsp' | 'ezviz' | 'hikconnect';
-  cloudDeviceId?: string;
-}
-
-interface CloudAccount {
-  id: string;
-  type: 'ezviz' | 'hikconnect';
-  username: string;
-  password: string;
-  connected: boolean;
-  devices: CloudDevice[];
-}
-
-interface CloudDevice {
-  deviceId: string;
-  deviceName: string;
-  deviceModel: string;
-  status: 'online' | 'offline';
-  channels: number;
-}
 
 export const HikvisionSettings: React.FC = () => {
-  const [cameras, setCameras] = useState<HikvisionCamera[]>([]);
-  const [cloudAccounts, setCloudAccounts] = useState<CloudAccount[]>([]);
-  const [apiCredentials, setApiCredentials] = useState({ appKey: '', appSecret: '' });
-  const [editingCamera, setEditingCamera] = useState<HikvisionCamera | null>(null);
-  const [editingAccount, setEditingAccount] = useState<CloudAccount | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [savedCredentials, setSavedCredentials] = useState<any>(null);
   const { toast } = useToast();
 
-  const eventTypes = [
-    { id: 'VMD', label: 'Video Motion Detection' },
-    { id: 'linedetection', label: 'Line Crossing Detection' },
-    { id: 'regionEntrance', label: 'Region Entrance' },
-    { id: 'regionExiting', label: 'Region Exiting' },
-    { id: 'PIR', label: 'PIR Motion' },
-    { id: 'tamperdetection', label: 'Tamper Detection' }
-  ];
-
   useEffect(() => {
-    loadCameras();
-    loadCloudAccounts();
-    loadApiCredentials();
+    // Load shared credentials from the same location as HikConnectIntegration
+    const saved = localStorage.getItem('jericho-hikconnect-credentials');
+    if (saved) {
+      try {
+        setSavedCredentials(JSON.parse(saved));
+      } catch (error) {
+        console.error('Failed to load saved credentials:', error);
+      }
+    }
   }, []);
 
-  const loadCameras = () => {
-    const savedCameras = localStorage.getItem('jericho-hikvision-cameras');
-    if (savedCameras) {
-      setCameras(JSON.parse(savedCameras));
-    }
-  };
+  const hasCredentials = savedCredentials?.appKey && savedCredentials?.appSecret;
+  const isConnected = savedCredentials?.accessToken && !isTokenExpired();
 
-  const loadCloudAccounts = () => {
-    const savedAccounts = localStorage.getItem('jericho-cloud-accounts');
-    if (savedAccounts) {
-      setCloudAccounts(JSON.parse(savedAccounts));
-    }
-  };
-
-  const loadApiCredentials = () => {
-    const savedCreds = localStorage.getItem('jericho-hikvision-api-creds');
-    if (savedCreds) {
-      setApiCredentials(JSON.parse(savedCreds));
-    }
-  };
-
-  const saveCameras = (updatedCameras: HikvisionCamera[]) => {
-    setCameras(updatedCameras);
-    localStorage.setItem('jericho-hikvision-cameras', JSON.stringify(updatedCameras));
-  };
-
-  const saveCloudAccounts = (updatedAccounts: CloudAccount[]) => {
-    setCloudAccounts(updatedAccounts);
-    localStorage.setItem('jericho-cloud-accounts', JSON.stringify(updatedAccounts));
-  };
-
-  const saveApiCredentials = () => {
-    localStorage.setItem('jericho-hikvision-api-creds', JSON.stringify(apiCredentials));
-    toast({
-      title: "API Credentials Saved",
-      description: "Hikvision API credentials have been updated.",
-    });
-  };
-
-  const createNewCamera = (type: 'rtsp' | 'ezviz' | 'hikconnect' = 'rtsp') => {
-    const newCamera: HikvisionCamera = {
-      id: `cam_${Date.now()}`,
-      name: `Camera ${cameras.length + 1}`,
-      ip: '',
-      port: 80,
-      username: 'admin',
-      password: '',
-      enabled: true,
-      connected: false,
-      events: ['VMD'],
-      type
-    };
-    setEditingCamera(newCamera);
-  };
-
-  const createCloudAccount = (type: 'ezviz' | 'hikconnect') => {
-    const newAccount: CloudAccount = {
-      id: `account_${Date.now()}`,
-      type,
-      username: '',
-      password: '',
-      connected: false,
-      devices: []
-    };
-    setEditingAccount(newAccount);
-  };
-
-  const saveCamera = () => {
-    if (!editingCamera) return;
-
-    const existingIndex = cameras.findIndex(c => c.id === editingCamera.id);
-    let updatedCameras;
-    
-    if (existingIndex >= 0) {
-      updatedCameras = cameras.map(c => c.id === editingCamera.id ? editingCamera : c);
-    } else {
-      updatedCameras = [...cameras, editingCamera];
-    }
-    
-    saveCameras(updatedCameras);
-    setEditingCamera(null);
-    
-    toast({
-      title: "Camera Saved",
-      description: `${editingCamera.name} configuration saved`,
-    });
-  };
-
-  const saveCloudAccount = async () => {
-    if (!editingAccount) return;
-
-    if (editingAccount.type === 'hikconnect' && (!apiCredentials.appKey || !apiCredentials.appSecret)) {
-      toast({
-        title: "API Credentials Required",
-        description: "Please set your Hikvision AppKey and AppSecret before adding a Hik-Connect account.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // Simulate API call to connect to cloud service
-      console.log("Attempting to connect with:", { 
-        type: editingAccount.type,
-        username: editingAccount.username,
-        appKey: apiCredentials.appKey 
-      });
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Mock devices for demonstration
-      const mockDevices: CloudDevice[] = [
-        {
-          deviceId: `${editingAccount.type}_device_1`,
-          deviceName: `${editingAccount.type.toUpperCase()} Camera 1`,
-          deviceModel: editingAccount.type === 'ezviz' ? 'CS-C6N' : 'DS-2CD2386G2-IU',
-          status: 'online',
-          channels: 1
-        },
-        {
-          deviceId: `${editingAccount.type}_device_2`,
-          deviceName: `${editingAccount.type.toUpperCase()} Camera 2`,
-          deviceModel: editingAccount.type === 'ezviz' ? 'CS-C8C' : 'DS-2CD2147G2-L',
-          status: 'online',
-          channels: 1
-        }
-      ];
-
-      const updatedAccount = {
-        ...editingAccount,
-        connected: true,
-        devices: mockDevices
-      };
-
-      const existingIndex = cloudAccounts.findIndex(a => a.id === editingAccount.id);
-      let updatedAccounts;
-      
-      if (existingIndex >= 0) {
-        updatedAccounts = cloudAccounts.map(a => a.id === editingAccount.id ? updatedAccount : a);
-      } else {
-        updatedAccounts = [...cloudAccounts, updatedAccount];
-      }
-      
-      saveCloudAccounts(updatedAccounts);
-      setEditingAccount(null);
-      
-      toast({
-        title: "Account Connected",
-        description: `${editingAccount.type.toUpperCase()} account connected successfully`,
-      });
-    } catch (error) {
-      toast({
-        title: "Connection Failed",
-        description: "Unable to connect to cloud service",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const addCloudCamera = (account: CloudAccount, device: CloudDevice) => {
-    const newCamera: HikvisionCamera = {
-      id: `cloud_${device.deviceId}_${Date.now()}`,
-      name: device.deviceName,
-      ip: '', // Cloud cameras don't need IP
-      port: 0,
-      username: account.username,
-      password: '', // Will use account credentials
-      enabled: true,
-      connected: device.status === 'online',
-      events: ['VMD'],
-      type: account.type,
-      cloudDeviceId: device.deviceId
-    };
-
-    const updatedCameras = [...cameras, newCamera];
-    saveCameras(updatedCameras);
-    
-    toast({
-      title: "Cloud Camera Added",
-      description: `${device.deviceName} added to monitoring`,
-    });
-  };
-
-  const deleteCamera = (cameraId: string) => {
-    const updatedCameras = cameras.filter(c => c.id !== cameraId);
-    saveCameras(updatedCameras);
-    
-    toast({
-      title: "Camera Deleted",
-      description: "Camera removed successfully",
-    });
-  };
-
-  const deleteCloudAccount = (accountId: string) => {
-    // Remove associated cameras first
-    const associatedCameras = cameras.filter(c => 
-      cloudAccounts.find(a => a.id === accountId)?.devices.some(d => d.deviceId === c.cloudDeviceId)
-    );
-    
-    const updatedCameras = cameras.filter(c => 
-      !associatedCameras.some(ac => ac.id === c.id)
-    );
-    saveCameras(updatedCameras);
-    
-    // Remove account
-    const updatedAccounts = cloudAccounts.filter(a => a.id !== accountId);
-    saveCloudAccounts(updatedAccounts);
-    
-    toast({
-      title: "Account Removed",
-      description: "Cloud account and associated cameras removed",
-    });
-  };
-
-  const toggleCameraEnabled = (cameraId: string, enabled: boolean) => {
-    const updatedCameras = cameras.map(c => 
-      c.id === cameraId ? { ...c, enabled } : c
-    );
-    saveCameras(updatedCameras);
-  };
-
-  const getCameraTypeIcon = (type: string) => {
-    switch (type) {
-      case 'ezviz': return <Eye className="w-4 h-4" />;
-      case 'hikconnect': return <Link className="w-4 h-4" />;
-      default: return <Camera className="w-4 h-4" />;
-    }
-  };
-
-  const getCameraTypeBadge = (type: string) => {
-    switch (type) {
-      case 'ezviz': return <Badge variant="secondary" className="bg-blue-100 text-blue-800">EZVIZ</Badge>;
-      case 'hikconnect': return <Badge variant="secondary" className="bg-green-100 text-green-800">HikConnect</Badge>;
-      default: return <Badge variant="outline">RTSP</Badge>;
-    }
-  };
-
-  const getStreamingStatus = (camera: HikvisionCamera) => {
-    if (camera.type === 'rtsp') {
-      return {
-        canStream: true,
-        status: 'Ready for WebRTC/HLS streaming',
-        icon: <CheckCircle className="w-4 h-4 text-green-500" />,
-        variant: 'default' as const
-      };
-    } else {
-      return {
-        canStream: false,
-        status: 'Requires API integration',
-        icon: <AlertTriangle className="w-4 h-4 text-amber-500" />,
-        variant: 'secondary' as const
-      };
-    }
-  };
+  function isTokenExpired(): boolean {
+    if (!savedCredentials?.tokenExpiry) return true;
+    return Date.now() >= savedCredentials.tokenExpiry;
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-bold uppercase tracking-wide">Hikvision Camera Setup</h3>
-          <p className="text-sm text-muted-foreground mt-1">
-            Configure Hikvision cameras, EZVIZ, HikConnect cloud accounts, and production API integration
-          </p>
+        <div className="flex items-center space-x-3">
+          <div className="p-2 bg-primary/10 rounded-lg">
+            <Cloud className="w-6 h-6 text-primary" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold">Hikvision Cloud Integration</h3>
+            <p className="text-sm text-muted-foreground">
+              Manage Hikvision cloud accounts and camera settings
+            </p>
+          </div>
         </div>
+        <Badge variant={isConnected ? "default" : "secondary"} className="flex items-center space-x-1">
+          {isConnected ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+          <span>{isConnected ? 'Connected' : 'Not Connected'}</span>
+        </Badge>
       </div>
 
-      {/* Global Alert about streaming capabilities */}
       <Alert>
-        <AlertTriangle className="h-4 w-4" />
-        <AlertTitle>Integration Status</AlertTitle>
-        <AlertDescription className="text-sm">
-          <div className="space-y-2 mt-2">
-            <div className="flex items-center space-x-2">
-              <CheckCircle className="w-4 h-4 text-green-500" />
-              <span><strong>RTSP Cameras:</strong> Full WebRTC + HLS streaming support (Ready to use)</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <CheckCircle className="w-4 h-4 text-green-500" />
-              <span><strong>Hik-Connect API:</strong> Production-ready integration with live streaming</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
-              <span><strong>EZVIZ Cloud:</strong> Configuration only - requires API integration for streaming</span>
-            </div>
-          </div>
+        <Info className="h-4 w-4" />
+        <AlertTitle>API Credentials Required</AlertTitle>
+        <AlertDescription>
+          To use Hikvision cloud features, please configure your API credentials in the 
+          <strong> Hik-Connect Integration</strong> tab. Once configured, those credentials 
+          will be used across all Hikvision cloud services.
         </AlertDescription>
       </Alert>
 
-      <Tabs defaultValue="hikconnect" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="hikconnect" className="flex items-center space-x-2">
-            <Link className="w-4 h-4" />
-            <span>Hik-Connect API</span>
-          </TabsTrigger>
-          <TabsTrigger value="cameras" className="flex items-center space-x-2">
-            <Camera className="w-4 h-4" />
-            <span>All Cameras</span>
-          </TabsTrigger>
-          <TabsTrigger value="cloud" className="flex items-center space-x-2">
-            <Cloud className="w-4 h-4" />
-            <span>Cloud Accounts</span>
-          </TabsTrigger>
-          <TabsTrigger value="rtsp" className="flex items-center space-x-2">
-            <Wifi className="w-4 h-4" />
-            <span>RTSP Setup</span>
-          </TabsTrigger>
+      <Tabs defaultValue="accounts" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="accounts">Cloud Accounts</TabsTrigger>
+          <TabsTrigger value="devices">Device Management</TabsTrigger>
+          <TabsTrigger value="settings">Cloud Settings</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="hikconnect">
-          <HikConnectIntegration 
-            onDevicesUpdate={(hikDevices) => {
-              // Convert Hik-Connect devices to local camera format and add them
-              const newCameras = hikDevices.map((device, index) => ({
-                id: `hikconnect_${device.deviceSerial}`,
-                name: device.deviceName,
-                ip: '', // Cloud devices don't need IP
-                port: 0,
-                username: '',
-                password: '',
-                enabled: true,
-                connected: device.status === 'online',
-                events: ['VMD'],
-                type: 'hikconnect' as const,
-                cloudDeviceId: device.deviceSerial
-              }));
-              
-              // Update the cameras list with Hik-Connect devices
-              const updatedCameras = [
-                ...cameras.filter(c => c.type !== 'hikconnect'),
-                ...newCameras
-              ];
-              saveCameras(updatedCameras);
-            }}
-          />
-        </TabsContent>
-
-        <TabsContent value="cameras" className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="font-semibold uppercase tracking-wide">All Connected Cameras</h4>
-            <div className="text-sm text-muted-foreground">
-              {cameras.length} cameras configured • {cameras.filter(c => c.type === 'rtsp').length} streaming ready
-            </div>
-          </div>
-          
-          {cameras.length === 0 ? (
-            <div className="text-center text-muted-foreground py-8 border-2 border-dashed border-border rounded-lg">
-              <Camera className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p className="font-semibold">No Cameras Configured</p>
-              <p className="text-sm mt-1">Add cameras from RTSP or cloud accounts</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {cameras.map((camera) => {
-                const streamStatus = getStreamingStatus(camera);
-                return (
-                  <div key={camera.id} className="p-4 border border-border rounded-lg bg-card">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-2">
-                        {getCameraTypeIcon(camera.type)}
-                        <span className="font-semibold text-sm">{camera.name}</span>
-                        {camera.connected ? (
-                          <Wifi className="w-3 h-3 text-green-500" />
-                        ) : (
-                          <WifiOff className="w-3 h-3 text-red-500" />
-                        )}
+        <TabsContent value="accounts">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <Users className="w-5 h-5" />
+                <span>Cloud Account Status</span>
+              </CardTitle>
+              <CardDescription>
+                Monitor your Hikvision cloud account connection and status
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!hasCredentials ? (
+                <Alert>
+                  <Key className="h-4 w-4" />
+                  <AlertDescription>
+                    No API credentials configured. Please go to the 
+                    <strong> Hik-Connect Integration</strong> tab to set up your AppKey and AppSecret.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-primary/10 rounded">
+                        <Cloud className="w-4 h-4" />
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteCamera(camera.id)}
-                        className="text-red-500 hover:text-red-600 h-6 w-6 p-0"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    </div>
-                    
-                    <div className="space-y-2 mb-3">
-                      <div className="flex items-center space-x-2">
-                        {getCameraTypeBadge(camera.type)}
-                        <Badge variant={streamStatus.variant} className="text-xs flex items-center space-x-1">
-                          {streamStatus.icon}
-                          <span>{streamStatus.canStream ? 'Stream Ready' : 'Config Only'}</span>
-                        </Badge>
-                      </div>
-                      {camera.type === 'rtsp' && (
-                        <div className="text-xs text-muted-foreground">
-                          {camera.ip}:{camera.port}
-                        </div>
-                      )}
-                      {camera.cloudDeviceId && (
-                        <div className="text-xs text-muted-foreground">
-                          Device: {camera.cloudDeviceId}
-                        </div>
-                      )}
-                      <div className="text-xs text-muted-foreground flex items-center space-x-1">
-                        {streamStatus.icon}
-                        <span>{streamStatus.status}</span>
+                      <div>
+                        <h4 className="font-semibold">Primary Account</h4>
+                        <p className="text-sm text-muted-foreground">
+                          AppKey: {savedCredentials.appKey.substring(0, 8)}...
+                        </p>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          checked={camera.enabled}
-                          onCheckedChange={(checked) => 
-                            toggleCameraEnabled(camera.id, checked as boolean)
-                          }
-                        />
-                        <span className="text-xs font-medium">Monitor</span>
-                      </div>
-                      
-                      <Badge variant={camera.connected ? "default" : "secondary"} className="text-xs">
-                        {camera.connected ? 'Online' : 'Offline'}
-                      </Badge>
-                    </div>
-                    
-                    <div>
-                      <div className="text-xs text-muted-foreground mb-1">Events:</div>
-                      <div className="flex flex-wrap gap-1">
-                        {camera.events.slice(0, 2).map(event => (
-                          <Badge key={event} variant="outline" className="text-xs">
-                            {eventTypes.find(e => e.id === event)?.label.split(' ')[0] || event}
-                          </Badge>
-                        ))}
-                        {camera.events.length > 2 && (
-                          <Badge variant="outline" className="text-xs">
-                            +{camera.events.length - 2}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
+                    <Badge variant={isConnected ? "default" : "secondary"}>
+                      {isConnected ? "Active" : "Inactive"}
+                    </Badge>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                  
+                  {isConnected && savedCredentials.tokenExpiry && (
+                    <div className="text-sm text-muted-foreground">
+                      <strong>Token expires:</strong> {new Date(savedCredentials.tokenExpiry).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
-        <TabsContent value="cloud" className="space-y-6">
-          {/* Cloud API Status Alert */}
-          <Alert>
-            <Cloud className="h-4 w-4" />
-            <AlertTitle>Cloud Integration Status</AlertTitle>
-            <AlertDescription>
-              <div className="space-y-2 mt-2 text-sm">
-                <p><strong>Current Status:</strong> Configuration interface only</p>
-                <p><strong>For Streaming:</strong> Requires API keys and backend integration</p>
-                <p><strong>Next Steps:</strong> Add your API credentials below, then contact support for streaming activation</p>
-              </div>
-            </AlertDescription>
-          </Alert>
-
-          <div className="p-6 border border-border rounded-lg bg-card shadow-sm">
-            <h4 className="font-semibold uppercase tracking-wide mb-2">API Configuration</h4>
-            <p className="text-sm text-muted-foreground mb-4">
-              Enter the AppKey and AppSecret provided by Hikvision for cloud service integration. These are required to connect to Hik-Connect accounts.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="appKey">AppKey</Label>
-                <Input
-                  id="appKey"
-                  value={apiCredentials.appKey}
-                  onChange={(e) => setApiCredentials(prev => ({ ...prev, appKey: e.target.value }))}
-                  placeholder="Enter your Hikvision AppKey"
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label htmlFor="appSecret">AppSecret</Label>
-                <Input
-                  id="appSecret"
-                  type="password"
-                  value={apiCredentials.appSecret}
-                  onChange={(e) => setApiCredentials(prev => ({ ...prev, appSecret: e.target.value }))}
-                  placeholder="Enter your Hikvision AppSecret"
-                  className="mt-1"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end mt-4">
-              <Button onClick={saveApiCredentials} size="sm" className="jericho-btn-primary">
-                <Save className="w-4 h-4 mr-2" />
-                Save Credentials
-              </Button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <h4 className="font-semibold uppercase tracking-wide">Cloud Account Integration</h4>
-            <div className="flex space-x-2">
-              <Button onClick={() => createCloudAccount('ezviz')} variant="outline" size="sm">
-                <Eye className="w-4 h-4 mr-2" />
-                Add EZVIZ
-              </Button>
-              <Button onClick={() => createCloudAccount('hikconnect')} variant="outline" size="sm">
-                <Link className="w-4 h-4 mr-2" />
-                Add HikConnect
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Cloud Accounts List */}
-            <div className="space-y-4">
-              <h5 className="font-medium">Connected Accounts</h5>
-              
-              {cloudAccounts.length === 0 ? (
-                <div className="text-center text-muted-foreground py-6 border-2 border-dashed border-border rounded-lg">
-                  <Cloud className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No cloud accounts connected</p>
+        <TabsContent value="devices">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <Camera className="w-5 h-5" />
+                <span>Device Management</span>
+              </CardTitle>
+              <CardDescription>
+                Advanced device configuration and management options
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!isConnected ? (
+                <div className="text-center text-muted-foreground py-8">
+                  <Camera className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>Connect to Hikvision cloud to manage devices</p>
                 </div>
               ) : (
-                cloudAccounts.map((account) => (
-                  <div key={account.id} className="p-4 border border-border rounded-lg bg-card">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-2">
-                        {account.type === 'ezviz' ? <Eye className="w-4 h-4" /> : <Link className="w-4 h-4" />}
-                        <span className="font-medium">{account.type.toUpperCase()}</span>
-                        <Badge variant={account.connected ? "default" : "secondary"}>
-                          {account.connected ? 'Connected' : 'Disconnected'}
-                        </Badge>
-                        <Badge variant="secondary" className="text-xs">
-                          Config Only
-                        </Badge>
-                      </div>
-                      <div className="flex space-x-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setEditingAccount(account)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => deleteCloudAccount(account.id)}
-                          className="text-red-500"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                    
-                    <div className="text-sm text-muted-foreground mb-3">
-                      Username: {account.username}
-                    </div>
-                    
-                    {account.connected && account.devices.length > 0 && (
-                      <div className="space-y-2">
-                        <div className="text-sm font-medium">Available Devices:</div>
-                        {account.devices.map((device) => (
-                          <div key={device.deviceId} className="flex items-center justify-between p-2 bg-muted rounded">
-                            <div>
-                              <div className="text-sm font-medium">{device.deviceName}</div>
-                              <div className="text-xs text-muted-foreground">{device.deviceModel}</div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <Badge variant={device.status === 'online' ? 'default' : 'secondary'} className="text-xs">
-                                {device.status}
-                              </Badge>
-                              {!cameras.some(c => c.cloudDeviceId === device.deviceId) ? (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => addCloudCamera(account, device)}
-                                  className="h-6 text-xs"
-                                >
-                                  Add
-                                </Button>
-                              ) : (
-                                <Badge variant="outline" className="text-xs">Added</Badge>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Account Setup Panel */}
-            <div className="space-y-4">
-              <h5 className="font-medium">
-                {editingAccount ? `${editingAccount.type.toUpperCase()} Account Setup` : 'Select Account to Edit'}
-              </h5>
-              
-              {editingAccount ? (
-                <div className="space-y-4 p-4 border border-border rounded-lg bg-card">
+                <div className="space-y-4">
                   <Alert>
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription className="text-sm">
-                      This will save account configuration only. Streaming requires additional API integration.
+                    <Shield className="h-4 w-4" />
+                    <AlertDescription>
+                      Device management features are available through the 
+                      <strong> Hik-Connect Integration</strong> tab, including live streaming, 
+                      event monitoring, and PTZ control.
                     </AlertDescription>
                   </Alert>
-
-                  <div className="flex items-center space-x-2 mb-4">
-                    {editingAccount.type === 'ezviz' ? <Eye className="w-5 h-5" /> : <Link className="w-5 h-5" />}
-                    <span className="font-medium">{editingAccount.type.toUpperCase()} Account</span>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <div>
-                      <Label htmlFor="cloud-username">Username/Email</Label>
-                      <Input
-                        id="cloud-username"
-                        value={editingAccount.username}
-                        onChange={(e) => setEditingAccount({
-                          ...editingAccount,
-                          username: e.target.value
-                        })}
-                        placeholder="your@email.com"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="cloud-password">Password</Label>
-                      <Input
-                        id="cloud-password"
-                        type="password"
-                        value={editingAccount.password}
-                        onChange={(e) => setEditingAccount({
-                          ...editingAccount,
-                          password: e.target.value
-                        })}
-                        placeholder="password"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="flex space-x-2 pt-4">
-                    <Button
-                      onClick={saveCloudAccount}
-                      disabled={loading || !editingAccount.username || !editingAccount.password}
-                      className="flex-1"
-                    >
-                      {loading ? 'Connecting...' : 'Save Configuration'}
-                    </Button>
-                  </div>
-                  
-                  <Button
-                    variant="ghost"
-                    onClick={() => setEditingAccount(null)}
-                    className="w-full"
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center h-32 text-muted-foreground border-2 border-dashed border-border rounded-lg">
-                  <div className="text-center">
-                    <Cloud className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Select an account to edit or add a new one</p>
-                  </div>
                 </div>
               )}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
-        <TabsContent value="rtsp" className="space-y-6">
-          <Alert>
-            <CheckCircle className="h-4 w-4" />
-            <AlertTitle>RTSP Cameras - Full Streaming Support</AlertTitle>
-            <AlertDescription>
-              RTSP cameras work immediately with WebRTC and HLS streaming. Configure your local IP cameras here for instant video monitoring.
-            </AlertDescription>
-          </Alert>
-
-          <div className="flex items-center justify-between">
-            <h4 className="font-semibold uppercase tracking-wide">RTSP Camera Setup</h4>
-            <Button onClick={() => createNewCamera('rtsp')} className="jericho-btn-accent">
-              <Plus className="w-4 h-4 mr-2" />
-              Add RTSP Camera
-            </Button>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* RTSP Camera List */}
-            <div className="space-y-4">
-              <h5 className="font-medium">RTSP Cameras</h5>
-              
-              {cameras.filter(c => c.type === 'rtsp').length === 0 ? (
-                <div className="text-center text-muted-foreground py-6 border-2 border-dashed border-border rounded-lg">
-                  <Wifi className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No RTSP cameras configured</p>
+        <TabsContent value="settings">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <Settings className="w-5 h-5" />
+                <span>Cloud Settings</span>
+              </CardTitle>
+              <CardDescription>
+                Configure cloud service preferences and defaults
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-4">
+                <div>
+                  <Label>Default Stream Quality</Label>
+                  <select className="w-full p-2 border rounded-md mt-1">
+                    <option value="HD">HD (High Definition)</option>
+                    <option value="SD">SD (Standard Definition)</option>
+                  </select>
                 </div>
-              ) : (
-                cameras.filter(c => c.type === 'rtsp').map((camera) => {
-                  const streamStatus = getStreamingStatus(camera);
-                  return (
-                    <div key={camera.id} className="p-4 border border-border rounded-lg bg-card">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center space-x-2">
-                          <Camera className="w-4 h-4" />
-                          <span className="font-semibold">{camera.name}</span>
-                          {camera.connected ? (
-                            <Wifi className="w-3 h-3 text-green-500" />
-                          ) : (
-                            <WifiOff className="w-3 h-3 text-red-500" />
-                          )}
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => deleteCamera(camera.id)}
-                          className="text-red-500 hover:text-red-600 h-6 w-6 p-0"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
-                      </div>
-                      
-                      <div className="space-y-2 mb-3">
-                        <div className="flex items-center space-x-2">
-                          {getCameraTypeBadge(camera.type)}
-                          <Badge variant={streamStatus.variant} className="text-xs flex items-center space-x-1">
-                            {streamStatus.icon}
-                            <span>{streamStatus.canStream ? 'Stream Ready' : 'Config Only'}</span>
-                          </Badge>
-                        </div>
-                        {camera.type === 'rtsp' && (
-                          <div className="text-xs text-muted-foreground">
-                            {camera.ip}:{camera.port}
-                          </div>
-                        )}
-                        {camera.cloudDeviceId && (
-                          <div className="text-xs text-muted-foreground">
-                            Device: {camera.cloudDeviceId}
-                          </div>
-                        )}
-                        <div className="text-xs text-muted-foreground flex items-center space-x-1">
-                          {streamStatus.icon}
-                          <span>{streamStatus.status}</span>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center space-x-2">
-                          <Checkbox
-                            checked={camera.enabled}
-                            onCheckedChange={(checked) => 
-                              toggleCameraEnabled(camera.id, checked as boolean)
-                            }
-                          />
-                          <span className="text-xs font-medium">Monitor</span>
-                        </div>
-                        
-                        <Badge variant={camera.connected ? "default" : "secondary"} className="text-xs">
-                          {camera.connected ? 'Online' : 'Offline'}
-                        </Badge>
-                      </div>
-                      
-                      <div>
-                        <div className="text-xs text-muted-foreground mb-1">Events:</div>
-                        <div className="flex flex-wrap gap-1">
-                          {camera.events.slice(0, 2).map(event => (
-                            <Badge key={event} variant="outline" className="text-xs">
-                              {eventTypes.find(e => e.id === event)?.label.split(' ')[0] || event}
-                            </Badge>
-                          ))}
-                          {camera.events.length > 2 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{camera.events.length - 2}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                
+                <div>
+                  <Label>Default Stream Protocol</Label>
+                  <select className="w-full p-2 border rounded-md mt-1">
+                    <option value="hls">HLS (HTTP Live Streaming)</option>
+                    <option value="rtmp">RTMP (Real-Time Messaging Protocol)</option>
+                    <option value="rtsp">RTSP (Real Time Streaming Protocol)</option>
+                  </select>
+                </div>
 
-            {/* RTSP Edit Panel */}
-            <div className="space-y-4">
-              <h5 className="font-medium">
-                {editingCamera && editingCamera.type === 'rtsp' ? 'RTSP Camera Configuration' : 'Select RTSP Camera to Edit'}
-              </h5>
-              
-              {editingCamera && editingCamera.type === 'rtsp' ? (
-                <div className="space-y-4 p-4 border border-border rounded-lg bg-card">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="col-span-2">
-                      <Label htmlFor="name">Camera Name</Label>
-                      <Input
-                        id="name"
-                        value={editingCamera.name}
-                        onChange={(e) => setEditingCamera({
-                          ...editingCamera,
-                          name: e.target.value
-                        })}
-                        placeholder="Living Room Camera"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="ip">IP Address</Label>
-                      <Input
-                        id="ip"
-                        value={editingCamera.ip}
-                        onChange={(e) => setEditingCamera({
-                          ...editingCamera,
-                          ip: e.target.value
-                        })}
-                        placeholder="192.168.1.100"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="port">Port</Label>
-                      <Input
-                        id="port"
-                        type="number"
-                        value={editingCamera.port}
-                        onChange={(e) => setEditingCamera({
-                          ...editingCamera,
-                          port: parseInt(e.target.value) || 80
-                        })}
-                        placeholder="80"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="username">Username</Label>
-                      <Input
-                        id="username"
-                        value={editingCamera.username}
-                        onChange={(e) => setEditingCamera({
-                          ...editingCamera,
-                          username: e.target.value
-                        })}
-                        placeholder="admin"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="password">Password</Label>
-                      <Input
-                        id="password"
-                        type="password"
-                        value={editingCamera.password}
-                        onChange={(e) => setEditingCamera({
-                          ...editingCamera,
-                          password: e.target.value
-                        })}
-                        placeholder="password"
-                      />
-                    </div>
-                  </div>
-                  
+                <Separator />
+
+                <div className="space-y-2">
+                  <h4 className="font-medium">Regional Settings</h4>
                   <div>
-                    <Label>Event Types to Monitor</Label>
-                    <div className="mt-2 space-y-2">
-                      {eventTypes.map(event => (
-                        <div key={event.id} className="flex items-center space-x-2">
-                          <Checkbox
-                            checked={editingCamera.events.includes(event.id)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setEditingCamera({
-                                  ...editingCamera,
-                                  events: [...editingCamera.events, event.id]
-                                });
-                              } else {
-                                setEditingCamera({
-                                  ...editingCamera,
-                                  events: editingCamera.events.filter(e => e !== event.id)
-                                });
-                              }
-                            }}
-                          />
-                          <span className="text-sm">{event.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  
-                  <div className="flex space-x-2 pt-4">
-                    <Button
-                      variant="outline"
-                      onClick={() => toast({ title: "Test Connection", description: "Feature coming soon" })}
-                      disabled={!editingCamera.ip || !editingCamera.password}
-                      className="flex-1"
-                    >
-                      <TestTube className="w-4 h-4 mr-2" />
-                      Test Connection
-                    </Button>
-                    <Button
-                      onClick={saveCamera}
-                      disabled={!editingCamera.ip || !editingCamera.password}
-                      className="flex-1 jericho-btn-primary"
-                    >
-                      <Save className="w-4 h-4 mr-2" />
-                      Save Camera
-                    </Button>
-                  </div>
-                  
-                  <Button
-                    variant="ghost"
-                    onClick={() => setEditingCamera(null)}
-                    className="w-full"
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center h-64 text-muted-foreground border-2 border-dashed border-border rounded-lg">
-                  <div className="text-center">
-                    <Camera className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p className="font-semibold">No RTSP Camera Selected</p>
-                    <p className="text-sm mt-1">Select a camera to edit or add a new one</p>
+                    <Label>API Region</Label>
+                    <select className="w-full p-2 border rounded-md mt-1">
+                      <option value="global">Global (open.ys7.com)</option>
+                      <option value="china">China (open.ys7.com.cn)</option>
+                    </select>
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

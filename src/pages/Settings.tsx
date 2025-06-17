@@ -186,13 +186,162 @@ const Settings = () => {
               <TabsContent value="streams" className="space-y-6">
                 <Card>
                   <CardHeader>
-                    <CardTitle>Stream Settings</CardTitle>
+                    <CardTitle className="flex items-center gap-2">
+                      <Camera className="h-5 w-5" />
+                      Stream Configuration
+                    </CardTitle>
                     <CardDescription>
-                      Configure streaming protocols and quality settings.
+                      Configure streaming protocols, quality settings, and bandwidth optimization for all camera sources.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-muted-foreground">Stream settings and configuration options.</p>
+                    <Tabs defaultValue="protocols" className="space-y-4">
+                      <TabsList className="grid w-full grid-cols-3">
+                        <TabsTrigger value="protocols">Protocols</TabsTrigger>
+                        <TabsTrigger value="quality">Quality & Bandwidth</TabsTrigger>
+                        <TabsTrigger value="optimization">Optimization</TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value="protocols">
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <Card>
+                              <CardHeader>
+                                <CardTitle className="text-base">RTSP Settings</CardTitle>
+                                <CardDescription>Real Time Streaming Protocol configuration</CardDescription>
+                              </CardHeader>
+                              <CardContent className="space-y-3">
+                                <div>
+                                  <Label>Default RTSP Port</Label>
+                                  <Input defaultValue="554" type="number" />
+                                </div>
+                                <div>
+                                  <Label>Transport Protocol</Label>
+                                  <select className="w-full p-2 border rounded-md">
+                                    <option value="tcp">TCP (Reliable)</option>
+                                    <option value="udp">UDP (Faster)</option>
+                                    <option value="auto">Auto</option>
+                                  </select>
+                                </div>
+                              </CardContent>
+                            </Card>
+
+                            <Card>
+                              <CardHeader>
+                                <CardTitle className="text-base">HLS Settings</CardTitle>
+                                <CardDescription>HTTP Live Streaming configuration</CardDescription>
+                              </CardHeader>
+                              <CardContent className="space-y-3">
+                                <div>
+                                  <Label>Segment Duration (seconds)</Label>
+                                  <Input defaultValue="6" type="number" />
+                                </div>
+                                <div>
+                                  <Label>Playlist Length</Label>
+                                  <Input defaultValue="3" type="number" />
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="quality">
+                        <div className="space-y-4">
+                          <Alert>
+                            <Camera className="h-4 w-4" />
+                            <AlertTitle>Quality vs Performance</AlertTitle>
+                            <AlertDescription>
+                              Higher quality settings require more bandwidth and processing power. 
+                              Adjust based on your network capacity and device capabilities.
+                            </AlertDescription>
+                          </Alert>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-4">
+                              <h4 className="font-medium">Resolution Presets</h4>
+                              <div className="space-y-2">
+                                {['4K (3840x2160)', '1080p (1920x1080)', '720p (1280x720)', '480p (854x480)'].map(res => (
+                                  <div key={res} className="flex items-center justify-between p-2 border rounded">
+                                    <span className="text-sm">{res}</span>
+                                    <Button variant="outline" size="sm">Set Default</Button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="space-y-4">
+                              <h4 className="font-medium">Bitrate Settings</h4>
+                              <div className="space-y-3">
+                                <div>
+                                  <Label>Video Bitrate (kbps)</Label>
+                                  <Input defaultValue="2000" type="number" />
+                                </div>
+                                <div>
+                                  <Label>Audio Bitrate (kbps)</Label>
+                                  <Input defaultValue="128" type="number" />
+                                </div>
+                                <div>
+                                  <Label>Frame Rate (fps)</Label>
+                                  <select className="w-full p-2 border rounded-md">
+                                    <option value="30">30 fps</option>
+                                    <option value="25">25 fps</option>
+                                    <option value="15">15 fps</option>
+                                    <option value="10">10 fps</option>
+                                  </select>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="optimization">
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <Card>
+                              <CardHeader>
+                                <CardTitle className="text-base">Adaptive Streaming</CardTitle>
+                              </CardHeader>
+                              <CardContent className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <Label>Enable Adaptive Quality</Label>
+                                  <input type="checkbox" className="rounded" defaultChecked />
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <Label>Auto-adjust for Bandwidth</Label>
+                                  <input type="checkbox" className="rounded" />
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <Label>Reduce Quality on High Load</Label>
+                                  <input type="checkbox" className="rounded" defaultChecked />
+                                </div>
+                              </CardContent>
+                            </Card>
+
+                            <Card>
+                              <CardHeader>
+                                <CardTitle className="text-base">Performance Settings</CardTitle>
+                              </CardHeader>
+                              <CardContent className="space-y-3">
+                                <div>
+                                  <Label>Max Concurrent Streams</Label>
+                                  <Input defaultValue="8" type="number" />
+                                </div>
+                                <div>
+                                  <Label>Buffer Size (seconds)</Label>
+                                  <Input defaultValue="3" type="number" />
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <Label>Hardware Acceleration</Label>
+                                  <input type="checkbox" className="rounded" defaultChecked />
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </div>
+                      </TabsContent>
+                    </Tabs>
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -200,28 +349,77 @@ const Settings = () => {
               {hasPermission('integrations') && (
                 <TabsContent value="integrations" className="space-y-6">
                   <ProtectedRoute requiredModule="integrations">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                          <Puzzle className="h-5 w-5" />
-                          External Integrations
-                        </CardTitle>
-                        <CardDescription>
-                          Configure third-party integrations and APIs
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-6">
+                    <div className="space-y-6">
+                      {/* Integration Overview Card */}
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <Puzzle className="h-5 w-5" />
+                            Integration Hub
+                          </CardTitle>
+                          <CardDescription>
+                            Connect and configure third-party services and external APIs to extend your security system capabilities.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="p-4 border rounded-lg">
+                              <div className="flex items-center space-x-2 mb-2">
+                                <Camera className="w-5 h-5 text-primary" />
+                                <span className="font-medium">Camera Systems</span>
+                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                Hikvision cloud integration for device management and streaming
+                              </p>
+                            </div>
+                            <div className="p-4 border rounded-lg">
+                              <div className="flex items-center space-x-2 mb-2">
+                                <Puzzle className="w-5 h-5 text-primary" />
+                                <span className="font-medium">Notifications</span>
+                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                Discord webhooks for real-time security alerts
+                              </p>
+                            </div>
+                            <div className="p-4 border rounded-lg">
+                              <div className="flex items-center space-x-2 mb-2">
+                                <FileText className="w-5 h-5 text-primary" />
+                                <span className="font-medium">Documentation</span>
+                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                Complete knowledge base and API documentation
+                              </p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Integration Tabs */}
+                      <Tabs defaultValue="hikvision" className="space-y-4">
+                        <TabsList className="grid w-full grid-cols-4">
+                          <TabsTrigger value="hikvision">Hikvision Cloud</TabsTrigger>
+                          <TabsTrigger value="hikconnect">Hik-Connect API</TabsTrigger>
+                          <TabsTrigger value="discord">Discord Alerts</TabsTrigger>
+                          <TabsTrigger value="knowledge">Knowledge Base</TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="hikvision">
                           <HikvisionSettings />
-                          <Separator />
+                        </TabsContent>
+
+                        <TabsContent value="hikconnect">
                           <HikConnectIntegration />
-                          <Separator />
-                          <MultiHikConnectManager />
-                          <Separator />
+                        </TabsContent>
+
+                        <TabsContent value="discord">
                           <DiscordIntegration />
-                        </div>
-                      </CardContent>
-                    </Card>
+                        </TabsContent>
+
+                        <TabsContent value="knowledge">
+                          <KnowledgeBase />
+                        </TabsContent>
+                      </Tabs>
+                    </div>
                   </ProtectedRoute>
                 </TabsContent>
               )}
