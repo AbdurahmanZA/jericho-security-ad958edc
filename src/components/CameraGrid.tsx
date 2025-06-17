@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Camera, Play, Square, Image, Edit2, Check, X, AlertTriangle } from 'lucide-react';
+import { Camera, Play, Square, Image, Edit2, Check, X, AlertTriangle, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Hls from 'hls.js';
 import { useCameraState } from '@/hooks/useCameraState';
 import { useCameraHLS } from '@/hooks/useCameraHLS';
 import { CameraTile } from './CameraTile';
+import { SaveLayoutButton } from './SaveLayoutButton';
+import { ComprehensiveCameraSetup } from './ComprehensiveCameraSetup';
 
 interface CameraGridProps {
   layout: number;
@@ -24,6 +26,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   const [editingName, setEditingName] = useState<number | null>(null);
   const [tempUrl, setTempUrl] = useState('');
   const [tempName, setTempName] = useState('');
+  const [showCameraSetup, setShowCameraSetup] = useState(false);
   const { toast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
   const retryTimeoutsRef = useRef<Record<number, NodeJS.Timeout>>({});
@@ -314,6 +317,23 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
     setTempName('');
   };
 
+  const handleAddCameras = (cameras: Array<{ id: number; name: string; url: string; }>) => {
+    const newUrls = { ...cameraUrls };
+    const newNames = { ...cameraNames };
+    
+    cameras.forEach(camera => {
+      newUrls[camera.id] = camera.url;
+      newNames[camera.id] = camera.name;
+    });
+    
+    setCameraUrls(newUrls);
+    setCameraNames(newNames);
+    
+    if (onLog) {
+      onLog(`Added ${cameras.length} cameras from comprehensive setup`);
+    }
+  };
+
   useEffect(() => {
     const cameraIds = Array.from({ length: isFullscreen ? 12 : layout }, (_, i) =>
       ((currentPage - 1) * (isFullscreen ? 12 : layout)) + 1 + i
@@ -373,9 +393,72 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   const camerasToShow = effectiveLayout;
   const startCameraId = (currentPage - 1) * effectiveLayout + 1;
 
+  // Check if grid is empty (no cameras configured)
+  const hasAnyCameras = Object.keys(cameraUrls).length > 0;
+
   return (
-    <div className={getGridClasses()}>
-      {Array.from({ length: camerasToShow }, (_, i) => renderCamera(startCameraId + i))}
+    <div className="h-full flex flex-col">
+      {/* Control Bar */}
+      <div className="flex items-center justify-between p-4 bg-gray-900/50 border-b border-gray-700">
+        <div className="flex items-center space-x-4">
+          <h2 className="text-lg font-semibold text-white">Camera Display</h2>
+          <span className="text-sm text-gray-400">
+            Page {currentPage} • {layout} cameras
+          </span>
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowCameraSetup(true)}
+            className="bg-blue-600 text-white border-blue-600 hover:bg-blue-700"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Cameras
+          </Button>
+          
+          <SaveLayoutButton
+            layout={layout}
+            currentPage={currentPage}
+            cameraUrls={cameraUrls}
+            cameraNames={cameraNames}
+          />
+        </div>
+      </div>
+
+      {/* Camera Grid */}
+      <div className="flex-1">
+        {!hasAnyCameras ? (
+          <div className="h-full flex items-center justify-center bg-gray-800/30">
+            <div className="text-center space-y-4">
+              <Camera className="w-16 h-16 mx-auto text-gray-500" />
+              <div>
+                <h3 className="text-xl font-semibold text-white mb-2">Welcome to Jericho Security</h3>
+                <p className="text-gray-400 mb-4">Your camera display is ready. Add cameras to get started.</p>
+                <Button
+                  onClick={() => setShowCameraSetup(true)}
+                  className="bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Your First Camera
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className={getGridClasses()}>
+            {Array.from({ length: camerasToShow }, (_, i) => renderCamera(startCameraId + i))}
+          </div>
+        )}
+      </div>
+
+      <ComprehensiveCameraSetup
+        open={showCameraSetup}
+        onClose={() => setShowCameraSetup(false)}
+        onAddCameras={handleAddCameras}
+        existingCameras={cameraUrls}
+      />
     </div>
   );
 };

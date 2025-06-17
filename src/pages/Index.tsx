@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -306,16 +305,14 @@ const Index = () => {
           </div>
 
           {/* Main Content */}
-          <div className="flex-1 p-6">
-            <div className={isFullscreen ? "h-screen" : "h-[calc(100vh-200px)]"}>
-              <CameraGrid
-                layout={layout}
-                isFullscreen={isFullscreen}
-                onSnapshot={handleSnapshot}
-                currentPage={currentPage}
-                onLog={addLog}
-              />
-            </div>
+          <div className="flex-1">
+            <CameraGrid
+              layout={layout}
+              isFullscreen={isFullscreen}
+              onSnapshot={handleSnapshot}
+              currentPage={currentPage}
+              onLog={addLog}
+            />
           </div>
 
           {/* Bottom Bar - only show when not in fullscreen */}
