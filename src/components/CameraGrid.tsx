@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Camera, Plus, Settings } from 'lucide-react';
@@ -205,7 +206,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
   useEffect(() => {
     let ws: WebSocket;
     function connectWebSocket() {
-      const wsUrl = `wss://192.168.0.138/api/ws`;
+      const wsUrl = `ws://192.168.0.138/api/ws`;
       ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
