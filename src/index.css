@@ -58,35 +58,35 @@
   }
 
   .dark {
-    /* Dark Theme Design System Colors */
+    /* Dark Theme Design System Colors - Enhanced contrast */
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
 
-    --card: 222.2 84% 4.9%;
+    --card: 217.2 32.6% 12%;
     --card-foreground: 210 40% 98%;
 
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 177 34% 27%;
+    --primary: 177 34% 35%;
     --primary-foreground: 210 40% 98%;
 
-    --secondary: 200 25% 36%;
+    --secondary: 200 25% 25%;
     --secondary-foreground: 210 40% 98%;
 
     --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted-foreground: 215 20.2% 75%;
 
-    --accent: 32 55% 56%;
+    --accent: 32 55% 60%;
     --accent-foreground: 222.2 47.4% 11.2%;
 
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
+    --border: 217.2 32.6% 25%;
+    --input: 217.2 32.6% 20%;
     --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 177 34% 22%;
+    --sidebar-background: 177 34% 15%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 177 34% 27%;
     --sidebar-primary-foreground: 0 0% 100%;
@@ -148,6 +148,22 @@
   
   .jericho-shield {
     filter: drop-shadow(0 2px 4px rgba(45, 90, 92, 0.3));
+  }
+
+  /* Enhanced switch visibility */
+  .dark [data-state="unchecked"] {
+    background-color: hsl(217.2 32.6% 25%) !important;
+    border: 1px solid hsl(217.2 32.6% 35%) !important;
+  }
+  
+  .dark [data-state="checked"] {
+    background-color: hsl(177 34% 35%) !important;
+  }
+  
+  /* Better contrast for inactive switches */
+  [data-state="unchecked"] {
+    background-color: hsl(210 40% 85%) !important;
+    border: 1px solid hsl(210 40% 75%) !important;
   }
 }
 
