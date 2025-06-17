@@ -1,3 +1,4 @@
+
 export const esxiUbuntuScript = `#!/bin/bash
 # JERICHO Security System - Complete ESXi Ubuntu 24.04 Installation
 # This script installs the complete system with real SIP/VoIP integration and WebRTC
@@ -138,6 +139,18 @@ sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<'EOAPACHE'
     RewriteCond %{REQUEST_METHOD} OPTIONS
     RewriteRule ^(.*)$ $1 [R=200,L]
 
+    # Serve HLS and snapshots files directly without rewriting to React app
+    RewriteCond %{REQUEST_URI} ^/hls/
+    RewriteRule ^.*$ - [L]
+    
+    RewriteCond %{REQUEST_URI} ^/snapshots/
+    RewriteRule ^.*$ - [L]
+    
+    # SPA fallback - send everything else to index.html
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^.*$ /index.html [QSA,L]
+
     <Directory /var/www/html>
         Options Indexes FollowSymLinks
         AllowOverride All
@@ -202,6 +215,23 @@ sudo tee /etc/apache2/sites-available/jericho-ssl.conf > /dev/null <<'EOSSL'
     Header always set Access-Control-Allow-Origin "*"
     Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
     Header always set Access-Control-Allow-Headers "Content-Type, Authorization"
+
+    # Handle preflight requests
+    RewriteEngine On
+    RewriteCond %{REQUEST_METHOD} OPTIONS
+    RewriteRule ^(.*)$ $1 [R=200,L]
+
+    # Serve HLS and snapshots files directly without rewriting to React app
+    RewriteCond %{REQUEST_URI} ^/hls/
+    RewriteRule ^.*$ - [L]
+    
+    RewriteCond %{REQUEST_URI} ^/snapshots/
+    RewriteRule ^.*$ - [L]
+    
+    # SPA fallback - send everything else to index.html
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^.*$ /index.html [QSA,L]
 
     <Directory /var/www/html>
         Options Indexes FollowSymLinks
@@ -417,4 +447,5 @@ echo "   - Consider VPN access for remote management"
 echo ""
 echo "=================================="
 echo "🟢 Full JERICHO System Ready with WebRTC + SIP/VoIP!"
+echo "🎯 Fixed: Apache configuration properly excludes HLS/snapshots from React router fallback."
 echo "=================================="`;

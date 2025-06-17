@@ -125,6 +125,21 @@ sudo tee /etc/apache2/sites-available/jericho-hls.conf > /dev/null <<'EOAPACHECO
     Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS"
     Header always set Access-Control-Allow-Headers "Content-Type"
 
+    # Enable rewrite engine
+    RewriteEngine On
+    
+    # Serve HLS and snapshots files directly without rewriting to React app
+    RewriteCond %{REQUEST_URI} ^/hls/
+    RewriteRule ^.*$ - [L]
+    
+    RewriteCond %{REQUEST_URI} ^/snapshots/
+    RewriteRule ^.*$ - [L]
+    
+    # SPA fallback - send everything else to index.html
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^.*$ /index.html [QSA,L]
+
     # HLS specific configuration
     <Directory "/var/www/html/hls">
         Options Indexes FollowSymLinks
@@ -259,6 +274,21 @@ if [ -n "\$DOMAIN" ]; then
     Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS"
     Header always set Access-Control-Allow-Headers "Content-Type"
 
+    # Enable rewrite engine
+    RewriteEngine On
+    
+    # Serve HLS and snapshots files directly without rewriting to React app
+    RewriteCond %{REQUEST_URI} ^/hls/
+    RewriteRule ^.*$ - [L]
+    
+    RewriteCond %{REQUEST_URI} ^/snapshots/
+    RewriteRule ^.*$ - [L]
+    
+    # SPA fallback - send everything else to index.html
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^.*$ /index.html [QSA,L]
+
     <Directory /var/www/html>
         AllowOverride All
         Require all granted
@@ -354,4 +384,5 @@ echo "=================================="
 echo "\\n🟢 HTTPS ACCESS: If you have a domain pointing to this server, update the DOMAIN variable in this script and rerun."
 echo "\\n🔄 VoIP is configured with GSM codec support (default) for reliable emergency communications."
 echo "\\n✅ HLS serving and WebSocket proxy are now properly configured with CORS headers and MIME types for better browser compatibility."
-echo "\\n🔧 Fixed: Added node-fetch dependency to prevent WebSocket stream start errors."`;
+echo "\\n🔧 Fixed: Added node-fetch dependency to prevent WebSocket stream start errors."
+echo "\\n🎯 Fixed: Apache configuration properly excludes HLS/snapshots from React router fallback."`;
