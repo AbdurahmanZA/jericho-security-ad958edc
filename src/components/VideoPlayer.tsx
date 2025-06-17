@@ -22,23 +22,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
   const connectionAttemptRef = useRef<number>(0);
   const isConnectionInProgressRef = useRef<boolean>(false);
   const hasAttemptedConnectionRef = useRef<boolean>(false);
+  const cleanupCalledRef = useRef<boolean>(false);
   
   const { setupWebRTCPlayer, cleanupWebRTCPlayer } = useWebRTC();
   const { setupHLSPlayer, cleanupHLSPlayer } = useCameraHLS();
 
-  // Stable log function
+  // Stable log function that doesn't change between renders
   const logMessage = useCallback((msg: string) => {
     console.log(`[VideoPlayer ${cameraId}] ${msg}`);
-    onLog?.(msg);
-  }, [onLog, cameraId]);
+    if (onLog) onLog(msg);
+  }, [cameraId]); // Only depend on cameraId, not onLog
 
   // Stable camera state update function
   const updateState = useCallback((updates: any) => {
-    updateCameraState?.(cameraId, updates);
-  }, [updateCameraState, cameraId]);
+    if (updateCameraState) updateCameraState(cameraId, updates);
+  }, [cameraId]); // Only depend on cameraId, not updateCameraState
 
-  // Stable cleanup function
+  // Stable cleanup function that prevents infinite loops
   const cleanup = useCallback(() => {
+    if (cleanupCalledRef.current) {
+      return; // Prevent duplicate cleanup calls
+    }
+    cleanupCalledRef.current = true;
+    
     logMessage(`Cleaning up all connections`);
     cleanupWebRTCPlayer(cameraId, logMessage);
     cleanupHLSPlayer(cameraId, logMessage);
@@ -46,7 +52,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
     setIsConnecting(false);
     isConnectionInProgressRef.current = false;
     hasAttemptedConnectionRef.current = false;
-  }, [cameraId, cleanupWebRTCPlayer, cleanupHLSPlayer, logMessage]);
+    
+    // Reset cleanup flag after a delay
+    setTimeout(() => {
+      cleanupCalledRef.current = false;
+    }, 100);
+  }, [cameraId, logMessage]); // Removed cleanupWebRTCPlayer and cleanupHLSPlayer from deps
 
   // Stable connection attempt function
   const attemptConnection = useCallback(async () => {
@@ -123,9 +134,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
         logMessage(`Connection failed: ${error}`);
       }
     }
-  }, [isActive, cameraId, setupWebRTCPlayer, setupHLSPlayer, logMessage, updateState, cleanupWebRTCPlayer, cleanupHLSPlayer]);
+  }, [isActive, cameraId, logMessage, updateState]); // Removed setupWebRTCPlayer, setupHLSPlayer, cleanupWebRTCPlayer, cleanupHLSPlayer from deps
 
-  // Effect for handling active state changes
+  // Effect for handling active state changes - simplified dependencies
   useEffect(() => {
     if (!isActive) {
       cleanup();
@@ -144,12 +155,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
 
       return () => clearTimeout(timer);
     }
-  }, [isActive, cleanup, attemptConnection]);
+  }, [isActive]); // Only depend on isActive to prevent infinite loops
 
   // Cleanup on unmount
   useEffect(() => {
     return cleanup;
-  }, [cleanup]);
+  }, []); // Empty dependency array for unmount cleanup only
 
   // Stream indicator
   const streamIndicator = useMemo(() => {
