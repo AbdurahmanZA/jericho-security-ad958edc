@@ -3,7 +3,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 
-class AsteriskManager {
+class FreePBXManager {
   constructor(db) {
     this.db = db;
     this.asteriskProcess = null;
@@ -35,7 +35,7 @@ class AsteriskManager {
         sip_port INTEGER DEFAULT 5060,
         rtp_start INTEGER DEFAULT 10000,
         rtp_end INTEGER DEFAULT 20000,
-        codec TEXT DEFAULT 'g729',
+        codec TEXT DEFAULT 'gsm',
         realm TEXT DEFAULT 'jericho.local',
         enabled BOOLEAN DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -58,7 +58,7 @@ class AsteriskManager {
       this.db.get('SELECT COUNT(*) as count FROM sip_config', (err, row) => {
         if (!err && row.count === 0) {
           this.db.run(`INSERT INTO sip_config (server_ip, sip_port, rtp_start, rtp_end, codec, realm, enabled) 
-                       VALUES ('192.168.1.100', 5060, 10000, 20000, 'g729', 'jericho.local', 0)`);
+                       VALUES ('192.168.1.100', 5060, 10000, 20000, 'gsm', 'jericho.local', 0)`);
         }
       });
     });
@@ -194,11 +194,11 @@ class AsteriskManager {
     });
   }
 
-  async generateAsteriskConfig() {
+  async generateFreePBXConfig() {
     const config = await this.getSipConfig();
     const extensions = await this.getExtensions();
 
-    // Generate sip.conf
+    // Generate sip.conf for FreePBX compatibility
     const sipConf = `[general]
 context=default
 allowoverlap=no
@@ -206,7 +206,7 @@ bindport=${config.sip_port || 5060}
 bindaddr=${config.server_ip || '0.0.0.0'}
 srvlookup=yes
 disallow=all
-allow=${config.codec || 'g729'}
+allow=${config.codec || 'gsm'}
 allow=g711u
 allow=g711a
 dtmfmode=rfc2833
@@ -227,24 +227,47 @@ maxexpiry=3600
 minexpiry=60
 defaultexpiry=120
 
+; FreePBX Integration Settings
+videosupport=yes
+maxcallbitrate=384
+callevents=no
+alwaysauthreject=yes
+g726nonstandard=yes
+useragent=JERICHO-FreePBX
+allowguest=no
+allowsubscribe=no
+subscribecontext=default
+
 ${extensions.filter(ext => ext.enabled).map(ext => `
 [${ext.number}]
 type=friend
 secret=${ext.secret}
 host=dynamic
-context=internal
+context=from-internal
 canreinvite=no
 disallow=all
-allow=${config.codec || 'g729'}
+allow=${config.codec || 'gsm'}
 allow=g711u
 allow=g711a
 dtmfmode=rfc2833
 callerid=${ext.name} <${ext.number}>
-mailbox=${ext.number}@default
+mailbox=${ext.number}@device
+permit=0.0.0.0/0.0.0.0
+deny=0.0.0.0/0.0.0.0
+qualify=yes
+qualifyfreq=60
+transport=udp
+avpf=no
+icesupport=no
+directmedia=no
+directmediaglare=no
+directmediapermit=0.0.0.0/0.0.0.0
+directmediadeny=0.0.0.0/0.0.0.0
+encryption=no
 `).join('\n')}
 `;
 
-    // Generate extensions.conf
+    // Generate extensions.conf for FreePBX compatibility
     const extensionsConf = `[general]
 static=yes
 writeprotect=no
@@ -256,31 +279,39 @@ IAXINFO=guest
 TRUNK=DAHDI/g0
 TRUNKMSD=1
 
-[internal]
-include => emergencies
-include => local_extensions
+[from-internal]
+include => app-directory
+include => app-disa
+include => app-echo-test
+include => app-speakextennum
+include => app-speakingclock
+include => parkedcalls
+include => from-internal-custom
+include => bad-number
 
-[local_extensions]
+; Internal extensions
 ${extensions.filter(ext => ext.enabled).map(ext => `
-exten => ${ext.number},1,Dial(SIP/${ext.number},20)
-exten => ${ext.number},n,Voicemail(${ext.number}@default,u)
+exten => ${ext.number},1,Macro(exten-vm,novm,${ext.number})
 exten => ${ext.number},n,Hangup()
 `).join('\n')}
 
 ; Voicemail access
-exten => *97,1,VoicemailMain(\${CALLERID(num)}@default)
+exten => *97,1,Macro(vm,${CALLERID(num)})
 exten => *97,n,Hangup()
 
-[emergencies]
-; Emergency numbers (South African)
-exten => 10111,1,Dial(SIP/emergency_line,30)
-exten => 10111,n,Hangup()
+; Emergency numbers
+[app-emergency]
+exten => 10111,1,Set(CALLERID(name)=JERICHO EMERGENCY)
+exten => 10111,2,Dial(SIP/emergency_line,30)
+exten => 10111,3,Hangup()
 
-exten => 112,1,Dial(SIP/emergency_line,30)
-exten => 112,n,Hangup()
+exten => 112,1,Set(CALLERID(name)=JERICHO EMERGENCY)
+exten => 112,2,Dial(SIP/emergency_line,30)
+exten => 112,3,Hangup()
 
-exten => 10177,1,Dial(SIP/emergency_line,30)
-exten => 10177,n,Hangup()
+exten => 10177,1,Set(CALLERID(name)=JERICHO EMERGENCY)
+exten => 10177,2,Dial(SIP/emergency_line,30)
+exten => 10177,3,Hangup()
 
 ; Security alert extension
 exten => 911,1,Set(CALLERID(name)=JERICHO SECURITY ALERT)
@@ -288,25 +319,81 @@ exten => 911,2,Dial(SIP/1001&SIP/1002,30)
 exten => 911,3,Voicemail(security@default,b)
 exten => 911,4,Hangup()
 
-[default]
-include => internal
+[macro-exten-vm]
+exten => s,1,Set(RingGroupMethod=${RRGROUPMETHOD})
+exten => s,n,Set(__EXTTOCALL=${ARG2})
+exten => s,n,Set(__PICKUPMARK=${EXTTOCALL})
+exten => s,n,Set(__NODEST=${CALLERID(name)})
+exten => s,n,Dial(SIP/${EXTTOCALL},20,tr)
+exten => s,n,Goto(s-${DIALSTATUS},1)
+
+exten => s-NOANSWER,1,Voicemail(${EXTTOCALL},u)
+exten => s-NOANSWER,n,Hangup()
+
+exten => s-BUSY,1,Voicemail(${EXTTOCALL},b)
+exten => s-BUSY,n,Hangup()
+
+exten => _s-.,1,Goto(s-NOANSWER,1)
+
+[macro-vm]
+exten => s,1,VoicemailMain(${ARG1})
+exten => s,n,Hangup()
+
+[bad-number]
+exten => _X.,1,Playback(ss-noservice)
+exten => _X.,n,SayAlpha(${EXTEN})
+exten => _X.,n,Hangup()
+
+[from-internal-custom]
+; Custom dialplan entries
+
+[app-directory]
+exten => 411,1,Directory(default)
+exten => 411,n,Hangup()
+
+[app-disa]
+exten => *62,1,DISA(no-password,from-internal)
+exten => *62,n,Hangup()
+
+[app-echo-test]
+exten => *43,1,Answer()
+exten => *43,n,Wait(1)
+exten => *43,n,Playback(demo-echotest)
+exten => *43,n,Echo()
+exten => *43,n,Playback(demo-echodone)
+exten => *43,n,Hangup()
+
+[app-speakextennum]
+exten => *60,1,SayDigits(${CALLERID(num)})
+exten => *60,n,Hangup()
+
+[app-speakingclock]
+exten => *61,1,Answer()
+exten => *61,n,Wait(1)
+exten => *61,n,SayUnixTime()
+exten => *61,n,Hangup()
+
+[parkedcalls]
+exten => 700,1,ParkedCall(701)
+exten => 701,1,ParkedCall(701)
+exten => 702,1,ParkedCall(702)
 `;
 
     return { sipConf, extensionsConf };
   }
 
-  async writeAsteriskConfigs() {
+  async writeFreePBXConfigs() {
     try {
-      const { sipConf, extensionsConf } = await this.generateAsteriskConfig();
+      const { sipConf, extensionsConf } = await this.generateFreePBXConfig();
       
       // Write configuration files
       await fs.writeFile(path.join(this.asteriskConfigDir, 'sip.conf'), sipConf);
       await fs.writeFile(path.join(this.asteriskConfigDir, 'extensions.conf'), extensionsConf);
       
-      console.log('Asterisk configuration files written successfully');
+      console.log('FreePBX configuration files written successfully');
       return true;
     } catch (error) {
-      console.error('Error writing Asterisk configs:', error);
+      console.error('Error writing FreePBX configs:', error);
       throw error;
     }
   }
@@ -319,17 +406,17 @@ include => internal
       }
 
       // First, generate and write configs
-      this.writeAsteriskConfigs().then(() => {
+      this.writeFreePBXConfigs().then(() => {
         // Start Asterisk daemon
         exec('sudo systemctl start asterisk', (error, stdout, stderr) => {
           if (error) {
-            console.error('Error starting Asterisk:', error);
+            console.error('Error starting FreePBX:', error);
             reject(error);
             return;
           }
           
           this.asteriskRunning = true;
-          console.log('Asterisk started successfully');
+          console.log('FreePBX started successfully');
           resolve({ status: 'started', output: stdout });
         });
       }).catch(reject);
@@ -374,7 +461,7 @@ include => internal
         return;
       }
 
-      this.writeAsteriskConfigs().then(() => {
+      this.writeFreePBXConfigs().then(() => {
         exec('sudo asterisk -rx "core reload"', (error, stdout, stderr) => {
           if (error) {
             console.error('Error reloading Asterisk:', error);
@@ -427,4 +514,4 @@ include => internal
   }
 }
 
-module.exports = AsteriskManager;
+module.exports = FreePBXManager;

@@ -125,7 +125,8 @@ app.get('/api/status', (req, res) => {
     timestamp: new Date().toISOString(),
     activeStreams: activeStreams.size,
     connectedClients: wsManager.getClientsCount(),
-    database: 'connected'
+    database: 'connected',
+    freepbx: 'integrated'
   });
 });
 
@@ -138,7 +139,9 @@ app.get('/api/test', (req, res) => {
       '/api/health/database',
       '/api/health/ffmpeg', 
       '/api/health/streams',
-      '/api/health/test-rtsp'
+      '/api/health/test-rtsp',
+      '/api/sip/config',
+      '/api/sip/extensions'
     ]
   });
 });
@@ -157,7 +160,7 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Jericho Security Backend Server running on port ${PORT}`);
   console.log(`WebSocket server ready for connections at /api/ws`);
-  console.log(`SIP/VoIP API available at /api/sip`);
+  console.log(`FreePBX Integration API available at /api/sip`);
   console.log(`Health checks available at /api/health/*`);
 });
 

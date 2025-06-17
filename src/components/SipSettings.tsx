@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Phone, Settings, Save, Copy, CheckCircle, XCircle, Info } from 'lucide-react';
+import { Phone, Settings, Save, Copy, CheckCircle, XCircle, Info, Server } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ExtensionManager } from './sip/ExtensionManager';
 import { SipLogs } from './sip/SipLogs';
@@ -106,7 +106,7 @@ export const SipSettings: React.FC = () => {
         localStorage.setItem('jericho-sip-config', JSON.stringify(sipConfig));
         toast({
           title: "SIP Configuration Saved",
-          description: "Asterisk configuration has been updated",
+          description: "FreePBX configuration has been updated",
         });
       } else {
         throw new Error('Failed to save configuration');
@@ -151,18 +151,18 @@ export const SipSettings: React.FC = () => {
         checkAsteriskStatus(); // Refresh status
         
         toast({
-          title: sipStatus.running ? "Asterisk Stopped" : "Asterisk Started",
+          title: sipStatus.running ? "FreePBX Stopped" : "FreePBX Started",
           description: sipStatus.running ? "SIP server has been stopped" : "SIP server is now running",
           variant: sipStatus.running ? "destructive" : "default",
         });
       } else {
-        throw new Error('Failed to toggle Asterisk');
+        throw new Error('Failed to toggle FreePBX');
       }
     } catch (error) {
-      console.error('Failed to toggle Asterisk:', error);
+      console.error('Failed to toggle FreePBX:', error);
       toast({
         title: "Operation Failed",
-        description: "Could not control Asterisk service. Check backend connection.",
+        description: "Could not control FreePBX service. Check backend connection.",
         variant: "destructive",
       });
     } finally {
@@ -177,17 +177,17 @@ export const SipSettings: React.FC = () => {
       
       if (response.ok) {
         toast({
-          title: "Asterisk Reloaded",
+          title: "FreePBX Reloaded",
           description: "Configuration has been reloaded successfully",
         });
       } else {
-        throw new Error('Failed to reload Asterisk');
+        throw new Error('Failed to reload FreePBX');
       }
     } catch (error) {
-      console.error('Failed to reload Asterisk:', error);
+      console.error('Failed to reload FreePBX:', error);
       toast({
         title: "Reload Failed",
-        description: "Could not reload Asterisk configuration",
+        description: "Could not reload FreePBX configuration",
         variant: "destructive",
       });
     } finally {
@@ -207,9 +207,9 @@ export const SipSettings: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-bold uppercase tracking-wide">SIP & VoIP Settings</h3>
+          <h3 className="text-lg font-bold uppercase tracking-wide">FreePBX Integration</h3>
           <p className="text-sm text-muted-foreground mt-1">
-            Configure Asterisk PBX with GSM/G729 codec for emergency calling
+            Configure FreePBX with GSM/G729 codec for emergency calling and VoIP communications
           </p>
         </div>
         <div className="flex items-center space-x-3">
@@ -224,7 +224,7 @@ export const SipSettings: React.FC = () => {
             className="jericho-btn-accent"
           >
             <Phone className="w-4 h-4 mr-2" />
-            {loading ? 'Please wait...' : (sipStatus.running ? 'Stop Asterisk' : 'Start Asterisk')}
+            {loading ? 'Please wait...' : (sipStatus.running ? 'Stop FreePBX' : 'Start FreePBX')}
           </Button>
           {sipStatus.running && (
             <Button
@@ -249,8 +249,8 @@ export const SipSettings: React.FC = () => {
         <TabsContent value="server">
           <Card className="p-6">
             <h4 className="font-semibold mb-4 flex items-center">
-              <Settings className="w-5 h-5 mr-2" />
-              Asterisk Server Configuration
+              <Server className="w-5 h-5 mr-2" />
+              FreePBX Server Configuration
             </h4>
             
             <div className="grid grid-cols-2 gap-4 mb-6">
@@ -333,14 +333,28 @@ export const SipSettings: React.FC = () => {
               </div>
             )}
 
+            <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+              <div className="flex items-start space-x-2">
+                <Info className="w-5 h-5 text-blue-600 mt-0.5" />
+                <div>
+                  <h5 className="font-semibold text-blue-800 dark:text-blue-200">FreePBX Integration</h5>
+                  <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                    This configuration integrates with FreePBX for complete PBX functionality including extensions,
+                    call routing, voicemail, and emergency dialing. GSM codec provides excellent voice quality 
+                    with minimal bandwidth requirements.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-4">
               <div className="flex items-start space-x-2">
                 <Info className="w-5 h-5 text-green-600 mt-0.5" />
                 <div>
                   <h5 className="font-semibold text-green-800 dark:text-green-200">GSM Codec (Default)</h5>
                   <p className="text-sm text-green-700 dark:text-green-300 mt-1">
-                    GSM codec provides excellent voice quality at 13kbps with built-in Asterisk support. No additional licensing required.
-                    Perfect for emergency communications with reliable compression and good audio quality.
+                    GSM codec provides excellent voice quality at 13kbps with built-in FreePBX support. No additional 
+                    licensing required. Perfect for emergency communications with reliable compression and good audio quality.
                   </p>
                 </div>
               </div>
