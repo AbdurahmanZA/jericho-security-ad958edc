@@ -10,20 +10,25 @@ const router = express.Router();
 router.post('/:cameraId/start', (req, res) => {
   const cameraId = req.params.cameraId;
   const { url } = req.body; // Get URL from request body
+  
+  console.log(`🎬 STREAM API: Starting stream for camera ${cameraId}`);
+  console.log(`📡 STREAM API: URL provided: ${url}`);
+  
   const db = req.app.get('db');
   const activeStreams = req.app.get('activeStreams');
   const wsManager = req.app.get('wsManager');
   
-  console.log(`Starting stream for camera ${cameraId} with URL: ${url}`);
+  console.log(`📊 STREAM API: Current active streams: ${activeStreams.size}`);
 
   // If URL is provided, store/update the camera in database
   if (url) {
+    console.log(`💾 STREAM API: Storing camera ${cameraId} in database`);
     db.run('INSERT OR REPLACE INTO cameras (id, name, url, enabled) VALUES (?, ?, ?, ?)',
       [cameraId, `Camera ${cameraId}`, url, 1], (err) => {
         if (err) {
-          console.error(`Error storing camera ${cameraId}:`, err);
+          console.error(`❌ STREAM API: Error storing camera ${cameraId}:`, err);
         } else {
-          console.log(`Camera ${cameraId} stored/updated in database`);
+          console.log(`✅ STREAM API: Camera ${cameraId} stored/updated in database`);
         }
       });
   }
@@ -31,34 +36,42 @@ router.post('/:cameraId/start', (req, res) => {
   // Get camera details (either just stored or existing)
   db.get('SELECT * FROM cameras WHERE id = ?', [cameraId], (err, camera) => {
     if (err) {
-      console.error(`Database error for camera ${cameraId}:`, err);
+      console.error(`❌ STREAM API: Database error for camera ${cameraId}:`, err);
       res.status(500).json({ error: 'Database error' });
       return;
     }
     
+    console.log(`🔍 STREAM API: Database lookup result for camera ${cameraId}:`, camera ? 'Found' : 'Not found');
+    
     if (!camera && !url) {
-      console.log(`Camera ${cameraId} not found and no URL provided`);
+      console.log(`⚠️ STREAM API: Camera ${cameraId} not found and no URL provided`);
       res.status(404).json({ error: 'Camera not found and no URL provided' });
       return;
     }
 
     const streamUrl = url || camera.url;
     if (!streamUrl) {
+      console.log(`⚠️ STREAM API: No stream URL available for camera ${cameraId}`);
       res.status(400).json({ error: 'No stream URL available' });
       return;
     }
+
+    console.log(`🔧 STREAM API: Using stream URL: ${streamUrl}`);
 
     // Start FFmpeg process for HLS
     const hlsPath = path.join(__dirname, '..', 'hls', `camera_${cameraId}.m3u8`);
     const segmentPath = path.join(__dirname, '..', 'hls', `camera_${cameraId}_%03d.ts`);
     
+    console.log(`📁 STREAM API: HLS output path: ${hlsPath}`);
+    
     // Ensure HLS directory exists
     const hlsDir = path.dirname(hlsPath);
     if (!fs.existsSync(hlsDir)) {
+      console.log(`📁 STREAM API: Creating HLS directory: ${hlsDir}`);
       fs.mkdirSync(hlsDir, { recursive: true });
     }
 
-    console.log(`Starting FFmpeg for camera ${cameraId} with URL: ${streamUrl}`);
+    console.log(`🎥 STREAM API: Starting FFmpeg for camera ${cameraId}`);
 
     const ffmpegArgs = [
       '-i', streamUrl,
@@ -72,24 +85,28 @@ router.post('/:cameraId/start', (req, res) => {
       hlsPath
     ];
 
+    console.log(`⚙️ STREAM API: FFmpeg command: ffmpeg ${ffmpegArgs.join(' ')}`);
+
     const ffmpeg = spawn('ffmpeg', ffmpegArgs);
     
     ffmpeg.stdout.on('data', (data) => {
-      console.log(`FFmpeg stdout for camera ${cameraId}: ${data}`);
+      console.log(`📤 FFmpeg stdout for camera ${cameraId}: ${data}`);
     });
 
     ffmpeg.stderr.on('data', (data) => {
-      console.log(`FFmpeg stderr for camera ${cameraId}: ${data}`);
+      console.log(`📤 FFmpeg stderr for camera ${cameraId}: ${data}`);
     });
     
     ffmpeg.on('spawn', () => {
-      console.log(`FFmpeg process spawned for camera ${cameraId}`);
+      console.log(`✅ STREAM API: FFmpeg process spawned for camera ${cameraId}`);
       activeStreams.set(parseInt(cameraId), {
         process: ffmpeg,
         camera: camera || { id: cameraId, url: streamUrl },
         hlsPath: hlsPath,
         startTime: new Date()
       });
+
+      console.log(`📊 STREAM API: Active streams count: ${activeStreams.size}`);
 
       // Update stream status
       db.run('INSERT OR REPLACE INTO stream_status (camera_id, status) VALUES (?, ?)',
@@ -105,7 +122,7 @@ router.post('/:cameraId/start', (req, res) => {
     });
 
     ffmpeg.on('error', (error) => {
-      console.error(`Stream error for camera ${cameraId}:`, error);
+      console.error(`💥 STREAM API: Stream error for camera ${cameraId}:`, error);
       activeStreams.delete(parseInt(cameraId));
       
       db.run('UPDATE stream_status SET status = ?, error_message = ? WHERE camera_id = ?',
@@ -120,7 +137,7 @@ router.post('/:cameraId/start', (req, res) => {
     });
 
     ffmpeg.on('exit', (code) => {
-      console.log(`Stream ended for camera ${cameraId} with code ${code}`);
+      console.log(`🔚 STREAM API: Stream ended for camera ${cameraId} with code ${code}`);
       activeStreams.delete(parseInt(cameraId));
       
       db.run('UPDATE stream_status SET status = ? WHERE camera_id = ?',
