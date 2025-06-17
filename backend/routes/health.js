@@ -1,164 +1,196 @@
 
 const express = require('express');
-const { exec } = require('child_process');
-const util = require('util');
-
+const { spawn } = require('child_process');
 const router = express.Router();
-const execAsync = util.promisify(exec);
 
-// Health check endpoints for system monitoring
-router.get('/ffmpeg', async (req, res) => {
-  try {
-    const { stdout } = await execAsync('ffmpeg -version');
-    const version = stdout.split('\n')[0];
-    res.json({
-      status: 'healthy',
-      message: 'FFmpeg is installed and working',
-      version: version,
-      available: true
-    });
-  } catch (error) {
-    res.status(500).json({
-      status: 'error',
-      message: 'FFmpeg not found or not working',
-      error: error.message,
-      available: false
-    });
-  }
-});
-
-router.get('/systemd', async (req, res) => {
-  try {
-    const services = ['jericho-backend', 'apache2', 'asterisk'];
-    const serviceStatus = {};
-
-    for (const service of services) {
-      try {
-        const { stdout } = await execAsync(`systemctl is-active ${service}`);
-        serviceStatus[service] = {
-          status: stdout.trim(),
-          active: stdout.trim() === 'active'
-        };
-      } catch (error) {
-        serviceStatus[service] = {
-          status: 'inactive',
-          active: false,
-          error: error.message
-        };
-      }
-    }
-
-    const allActive = Object.values(serviceStatus).every(s => s.active);
-    
-    res.json({
-      status: allActive ? 'healthy' : 'warning',
-      message: allActive ? 'All services running' : 'Some services not active',
-      services: serviceStatus
-    });
-  } catch (error) {
-    res.status(500).json({
-      status: 'error',
-      message: 'Cannot check systemd services',
-      error: error.message
-    });
-  }
-});
-
+// Database health check
 router.get('/database', (req, res) => {
   const db = req.app.get('db');
-  // Test database connectivity with a simple query
-  db.get('SELECT COUNT(*) as count FROM cameras', (err, row) => {
+  
+  db.get('SELECT 1 as test', (err, row) => {
     if (err) {
       res.status(500).json({
         status: 'error',
-        message: 'Database query failed',
-        error: err.message,
-        accessible: false
+        message: 'Database connection failed',
+        error: err.message
       });
-      return;
+    } else {
+      res.json({
+        status: 'healthy',
+        message: 'Database connection successful',
+        timestamp: new Date().toISOString()
+      });
     }
-    
-    res.json({
-      status: 'healthy',
-      message: 'Database accessible and responding',
-      camera_count: row.count,
-      accessible: true
-    });
   });
 });
 
-router.get('/disk-space', async (req, res) => {
-  try {
-    const { stdout } = await execAsync('df -h /opt/jericho-backend');
-    const lines = stdout.split('\n');
-    const dataLine = lines[1].split(/\s+/);
-    
-    res.json({
-      status: 'healthy',
-      message: 'Disk space checked',
-      filesystem: dataLine[0],
-      size: dataLine[1],
-      used: dataLine[2],
-      available: dataLine[3],
-      use_percentage: dataLine[4]
-    });
-  } catch (error) {
+// FFmpeg health check
+router.get('/ffmpeg', (req, res) => {
+  const ffmpeg = spawn('ffmpeg', ['-version']);
+  let output = '';
+  let errorOutput = '';
+
+  ffmpeg.stdout.on('data', (data) => {
+    output += data.toString();
+  });
+
+  ffmpeg.stderr.on('data', (data) => {
+    errorOutput += data.toString();
+  });
+
+  ffmpeg.on('close', (code) => {
+    if (code === 0 || output.includes('ffmpeg version')) {
+      // FFmpeg sometimes outputs version info to stderr
+      const versionInfo = output || errorOutput;
+      const versionMatch = versionInfo.match(/ffmpeg version ([^\s]+)/);
+      
+      res.json({
+        status: 'healthy',
+        message: 'FFmpeg is available',
+        version: versionMatch ? versionMatch[1] : 'unknown',
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      res.status(500).json({
+        status: 'error',
+        message: 'FFmpeg not available',
+        error: errorOutput || 'FFmpeg command failed',
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  ffmpeg.on('error', (error) => {
     res.status(500).json({
       status: 'error',
-      message: 'Cannot check disk space',
-      error: error.message
+      message: 'FFmpeg not found',
+      error: error.message,
+      timestamp: new Date().toISOString()
     });
-  }
+  });
+
+  // Timeout after 10 seconds
+  setTimeout(() => {
+    ffmpeg.kill('SIGTERM');
+    if (!res.headersSent) {
+      res.status(500).json({
+        status: 'error',
+        message: 'FFmpeg health check timeout',
+        timestamp: new Date().toISOString()
+      });
+    }
+  }, 10000);
 });
 
-// Comprehensive system health check
-router.get('/', async (req, res) => {
-  const healthChecks = {};
+// Stream status health check
+router.get('/streams', (req, res) => {
   const activeStreams = req.app.get('activeStreams');
-  const clients = req.app.get('clients');
   const db = req.app.get('db');
+
+  db.all('SELECT * FROM stream_status', (err, streams) => {
+    if (err) {
+      res.status(500).json({
+        status: 'error',
+        message: 'Failed to query stream status',
+        error: err.message
+      });
+    } else {
+      res.json({
+        status: 'healthy',
+        message: `${activeStreams.size} active streams`,
+        activeStreams: activeStreams.size,
+        totalConfigured: streams.length,
+        streams: streams,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+});
+
+// RTSP connection test
+router.post('/test-rtsp', (req, res) => {
+  const { url } = req.body;
   
-  // Check FFmpeg
-  try {
-    await execAsync('ffmpeg -version');
-    healthChecks.ffmpeg = { status: 'healthy', message: 'FFmpeg available' };
-  } catch {
-    healthChecks.ffmpeg = { status: 'error', message: 'FFmpeg not available' };
+  if (!url) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'RTSP URL is required'
+    });
   }
+
+  console.log(`Testing RTSP connection to: ${url}`);
   
-  // Check database
-  await new Promise((resolve) => {
-    db.get('SELECT 1', (err) => {
-      healthChecks.database = err 
-        ? { status: 'error', message: 'Database error' }
-        : { status: 'healthy', message: 'Database accessible' };
-      resolve();
+  // Use ffprobe to test the RTSP stream
+  const ffprobe = spawn('ffprobe', [
+    '-v', 'quiet',
+    '-print_format', 'json',
+    '-show_streams',
+    '-rtsp_transport', 'tcp',
+    '-timeout', '10000000', // 10 second timeout
+    url
+  ]);
+
+  let output = '';
+  let errorOutput = '';
+
+  ffprobe.stdout.on('data', (data) => {
+    output += data.toString();
+  });
+
+  ffprobe.stderr.on('data', (data) => {
+    errorOutput += data.toString();
+  });
+
+  ffprobe.on('close', (code) => {
+    if (code === 0 && output) {
+      try {
+        const streamInfo = JSON.parse(output);
+        res.json({
+          status: 'success',
+          message: 'RTSP stream is accessible',
+          streams: streamInfo.streams,
+          timestamp: new Date().toISOString()
+        });
+      } catch (parseError) {
+        res.json({
+          status: 'warning',
+          message: 'RTSP stream accessible but metadata parsing failed',
+          rawOutput: output,
+          timestamp: new Date().toISOString()
+        });
+      }
+    } else {
+      res.status(400).json({
+        status: 'error',
+        message: 'RTSP stream not accessible',
+        error: errorOutput || `ffprobe exited with code ${code}`,
+        url: url,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  ffprobe.on('error', (error) => {
+    res.status(500).json({
+      status: 'error',
+      message: 'ffprobe command failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
     });
   });
-  
-  // Check active streams
-  healthChecks.streams = {
-    status: activeStreams.size > 0 ? 'healthy' : 'warning',
-    message: `${activeStreams.size} active streams`,
-    count: activeStreams.size
-  };
-  
-  // Check WebSocket clients
-  healthChecks.websocket = {
-    status: clients.size > 0 ? 'healthy' : 'warning',
-    message: `${clients.size} connected clients`,
-    count: clients.size
-  };
-  
-  const overallHealthy = Object.values(healthChecks).every(check => check.status === 'healthy');
-  
-  res.json({
-    status: overallHealthy ? 'healthy' : 'warning',
-    timestamp: new Date().toISOString(),
-    checks: healthChecks,
-    uptime: process.uptime(),
-    memory: process.memoryUsage()
-  });
+
+  // Timeout after 15 seconds
+  setTimeout(() => {
+    ffprobe.kill('SIGTERM');
+    if (!res.headersSent) {
+      res.status(408).json({
+        status: 'error',
+        message: 'RTSP connection test timeout',
+        url: url,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }, 15000);
 });
 
 module.exports = router;

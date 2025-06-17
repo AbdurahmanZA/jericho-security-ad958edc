@@ -3,6 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { 
   CheckCircle, 
   XCircle, 
@@ -23,7 +25,8 @@ import {
   Eye,
   Terminal,
   Key,
-  Bug
+  Bug,
+  TestTube
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -74,6 +77,9 @@ const Status = () => {
     lastCheck: new Date(),
     responseTime: 0
   });
+  const [rtspTestUrl, setRtspTestUrl] = useState('');
+  const [rtspTestResults, setRtspTestResults] = useState<any[]>([]);
+  const [isTestingRtsp, setIsTestingRtsp] = useState(false);
   
   const wsRef = useRef<WebSocket | null>(null);
   const logIntervalRef = useRef<NodeJS.Timeout>();
@@ -499,6 +505,187 @@ const Status = () => {
     }
   };
 
+  const checkDatabase = async () => {
+    addApiLog('database_health', 'info', 'Checking database connectivity');
+    
+    try {
+      const response = await fetch('/api/health/database');
+      const data = await response.json();
+      
+      if (response.ok && data.status === 'healthy') {
+        updateCheck('database', {
+          status: 'healthy',
+          message: 'SQLite database connected',
+          details: 'Database queries responding normally'
+        });
+        addApiLog('database_health', 'success', 'Database health check passed');
+      } else {
+        updateCheck('database', {
+          status: 'error',
+          message: 'Database connection failed',
+          details: data.error || 'Unknown database error'
+        });
+        addApiLog('database_health', 'error', 'Database health check failed', data);
+      }
+    } catch (error) {
+      updateCheck('database', {
+        status: 'error',
+        message: 'Database health check failed',
+        details: `Error: ${error.message}`
+      });
+      addApiLog('database_health', 'error', 'Database health check failed', { error: error.message });
+    }
+  };
+
+  const checkFFmpeg = async () => {
+    addApiLog('ffmpeg_health', 'info', 'Checking FFmpeg availability');
+    
+    try {
+      const response = await fetch('/api/health/ffmpeg');
+      const data = await response.json();
+      
+      if (response.ok && data.status === 'healthy') {
+        updateCheck('ffmpeg', {
+          status: 'healthy',
+          message: `FFmpeg available (${data.version})`,
+          details: 'Video processing capabilities ready'
+        });
+        addApiLog('ffmpeg_health', 'success', 'FFmpeg health check passed', { version: data.version });
+      } else {
+        updateCheck('ffmpeg', {
+          status: 'error',
+          message: 'FFmpeg not available',
+          details: data.error || 'FFmpeg installation required'
+        });
+        addApiLog('ffmpeg_health', 'error', 'FFmpeg health check failed', data);
+      }
+    } catch (error) {
+      updateCheck('ffmpeg', {
+        status: 'error',
+        message: 'FFmpeg health check failed',
+        details: `Error: ${error.message}`
+      });
+      addApiLog('ffmpeg_health', 'error', 'FFmpeg health check failed', { error: error.message });
+    }
+  };
+
+  const checkStreams = async () => {
+    addApiLog('streams_health', 'info', 'Checking stream status');
+    
+    try {
+      const response = await fetch('/api/health/streams');
+      const data = await response.json();
+      
+      if (response.ok && data.status === 'healthy') {
+        updateCheck('streams', {
+          status: data.activeStreams > 0 ? 'healthy' : 'warning',
+          message: `${data.activeStreams} active of ${data.totalConfigured} configured`,
+          details: `Active streams: ${data.activeStreams}, Total configured: ${data.totalConfigured}`
+        });
+        addApiLog('streams_health', 'success', 'Stream status check passed', {
+          active: data.activeStreams,
+          total: data.totalConfigured
+        });
+      } else {
+        updateCheck('streams', {
+          status: 'error',
+          message: 'Stream status check failed',
+          details: data.error || 'Unable to query stream status'
+        });
+        addApiLog('streams_health', 'error', 'Stream status check failed', data);
+      }
+    } catch (error) {
+      updateCheck('streams', {
+        status: 'error',
+        message: 'Stream status check failed',
+        details: `Error: ${error.message}`
+      });
+      addApiLog('streams_health', 'error', 'Stream status check failed', { error: error.message });
+    }
+  };
+
+  const testRtspConnection = async (url?: string) => {
+    const testUrl = url || rtspTestUrl;
+    if (!testUrl) {
+      toast({
+        title: "RTSP URL Required",
+        description: "Please enter an RTSP URL to test",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsTestingRtsp(true);
+    addApiLog('rtsp_test', 'info', `Testing RTSP connection to: ${testUrl}`);
+    
+    try {
+      const response = await fetch('/api/health/test-rtsp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ url: testUrl })
+      });
+      
+      const data = await response.json();
+      
+      const result = {
+        timestamp: new Date(),
+        url: testUrl,
+        status: data.status,
+        message: data.message,
+        details: data.streams || data.error,
+        responseTime: Date.now()
+      };
+      
+      setRtspTestResults(prev => [result, ...prev.slice(0, 9)]); // Keep last 10 results
+      
+      if (data.status === 'success') {
+        addApiLog('rtsp_test', 'success', `RTSP test passed: ${data.message}`, {
+          url: testUrl,
+          streams: data.streams?.length || 0
+        });
+        
+        toast({
+          title: "RTSP Test Successful",
+          description: `Connection to ${testUrl} successful`,
+        });
+      } else {
+        addApiLog('rtsp_test', 'error', `RTSP test failed: ${data.message}`, {
+          url: testUrl,
+          error: data.error
+        });
+        
+        toast({
+          title: "RTSP Test Failed",
+          description: data.message,
+          variant: "destructive"
+        });
+      }
+      
+    } catch (error) {
+      const result = {
+        timestamp: new Date(),
+        url: testUrl,
+        status: 'error',
+        message: `Request failed: ${error.message}`,
+        details: null,
+        responseTime: Date.now()
+      };
+      
+      setRtspTestResults(prev => [result, ...prev.slice(0, 9)]);
+      addApiLog('rtsp_test', 'error', `RTSP test request failed: ${error.message}`, { url: testUrl });
+      
+      toast({
+        title: "RTSP Test Error",
+        description: `Request failed: ${error.message}`,
+        variant: "destructive"
+      });
+    } finally {
+      setIsTestingRtsp(false);
+    }
+  };
+
   const checkWebSocket = () => {
     updateCheck('websocket', {
       status: wsStatus === 'connected' ? 'healthy' : wsStatus === 'connecting' ? 'warning' : 'error',
@@ -514,7 +701,10 @@ const Status = () => {
 
     try {
       await Promise.allSettled([
-        checkBackendHealth()
+        checkBackendHealth(),
+        checkDatabase(),
+        checkFFmpeg(),
+        checkStreams()
       ]);
       checkWebSocket();
     } catch (error) {
@@ -929,6 +1119,108 @@ const Status = () => {
                 ))
               )}
             </div>
+          </CardContent>
+        </Card>
+
+        {/* RTSP Connection Tester */}
+        <Card className="bg-slate-800 border-slate-700">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-white flex items-center">
+                <TestTube className="w-5 h-5 mr-2" />
+                RTSP Connection Tester
+              </CardTitle>
+              <Button 
+                onClick={() => setRtspTestResults([])}
+                variant="outline"
+                size="sm"
+              >
+                Clear Results
+              </Button>
+            </div>
+            <CardDescription className="text-slate-400">
+              Test RTSP stream connectivity before adding to cameras
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex space-x-2">
+              <div className="flex-1">
+                <Label htmlFor="rtspUrl" className="text-slate-300">RTSP URL</Label>
+                <Input
+                  id="rtspUrl"
+                  value={rtspTestUrl}
+                  onChange={(e) => setRtspTestUrl(e.target.value)}
+                  placeholder="rtsp://username:password@192.168.1.100:554/stream"
+                  className="bg-slate-900 border-slate-600 text-white"
+                />
+              </div>
+              <div className="flex items-end">
+                <Button 
+                  onClick={() => testRtspConnection()}
+                  disabled={isTestingRtsp || !rtspTestUrl}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {isTestingRtsp ? (
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <TestTube className="w-4 h-4 mr-2" />
+                  )}
+                  Test Connection
+                </Button>
+              </div>
+            </div>
+            
+            <div className="space-x-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => testRtspConnection('rtsp://hass:Mickeyishome@192.168.0.4:10554/Streaming/Channels/102')}
+                disabled={isTestingRtsp}
+              >
+                Test Your Camera
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => testRtspConnection('rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mp4')}
+                disabled={isTestingRtsp}
+              >
+                Test Demo Stream
+              </Button>
+            </div>
+
+            {rtspTestResults.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-white font-semibold">Test Results</h4>
+                <div className="h-64 overflow-y-auto bg-slate-900 rounded p-4 space-y-2">
+                  {rtspTestResults.map((result, index) => (
+                    <div key={index} className="border-b border-slate-700 pb-2">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-sm font-semibold ${
+                          result.status === 'success' ? 'text-green-400' :
+                          result.status === 'warning' ? 'text-yellow-400' : 'text-red-400'
+                        }`}>
+                          {result.status.toUpperCase()}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          {result.timestamp.toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-400 truncate">{result.url}</div>
+                      <div className="text-xs text-slate-300">{result.message}</div>
+                      {result.details && (
+                        <div className="text-xs text-slate-500 mt-1">
+                          {typeof result.details === 'object' ? 
+                            JSON.stringify(result.details, null, 2) : 
+                            result.details
+                          }
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
