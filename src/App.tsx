@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import Index from "./pages/Index";
 import Settings from "./pages/Settings";
 import MultiView from "./pages/MultiView";
+import Status from "./pages/Status";
 import NotFound from "./pages/NotFound";
 import LoginPage from "./components/LoginPage";
 
@@ -25,6 +26,7 @@ const AppRoutes = () => {
       <Route path="/" element={<Index />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="/multiview" element={<MultiView />} />
+      <Route path="/status" element={<Status />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
