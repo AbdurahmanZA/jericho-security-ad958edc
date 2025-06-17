@@ -619,6 +619,9 @@ const Status = () => {
     addApiLog('rtsp_test', 'info', `Testing RTSP connection to: ${testUrl}`);
     
     try {
+      console.log('Making RTSP test request to:', '/api/health/test-rtsp');
+      console.log('Request payload:', { url: testUrl });
+      
       const response = await fetch('/api/health/test-rtsp', {
         method: 'POST',
         headers: {
@@ -626,6 +629,29 @@ const Status = () => {
         },
         body: JSON.stringify({ url: testUrl })
       });
+      
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
+      
+      // Check if response is JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const textResponse = await response.text();
+        console.error('Non-JSON response received:', textResponse);
+        
+        addApiLog('rtsp_test', 'error', `Server returned non-JSON response`, {
+          status: response.status,
+          contentType,
+          response: textResponse.substring(0, 200) + '...'
+        });
+        
+        toast({
+          title: "API Error",
+          description: `Server returned HTML instead of JSON. Status: ${response.status}`,
+          variant: "destructive"
+        });
+        return;
+      }
       
       const data = await response.json();
       
@@ -664,6 +690,8 @@ const Status = () => {
       }
       
     } catch (error) {
+      console.error('RTSP test request failed:', error);
+      
       const result = {
         timestamp: new Date(),
         url: testUrl,
@@ -698,7 +726,7 @@ const Status = () => {
     setIsRefreshing(true);
     initializeChecks();
     addStreamLog(0, 'health_check', 'info', 'Running comprehensive system health check...');
-
+    
     try {
       await Promise.allSettled([
         checkBackendHealth(),
@@ -848,6 +876,23 @@ const Status = () => {
                 <RefreshCw className="w-4 h-4 mr-2" />
               )}
               Refresh All
+            </Button>
+            <Button 
+              onClick={async () => {
+                try {
+                  const testResponse = await fetch('/api/test');
+                  const testData = await testResponse.json();
+                  console.log('API test response:', testData);
+                  addApiLog('api_test', 'success', 'API test endpoint working', testData);
+                } catch (error) {
+                  console.error('API test failed:', error);
+                  addApiLog('api_test', 'error', 'API test failed', { error: error.message });
+                }
+              }}
+              variant="outline"
+              size="sm"
+            >
+              Test API
             </Button>
           </div>
         </div>
@@ -1139,7 +1184,7 @@ const Status = () => {
               </Button>
             </div>
             <CardDescription className="text-slate-400">
-              Test RTSP stream connectivity before adding to cameras
+              Test RTSP stream connectivity before adding to cameras. Debug API connectivity issues.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -1187,6 +1232,16 @@ const Status = () => {
               >
                 Test Demo Stream
               </Button>
+            </div>
+
+            {/* Debug Section */}
+            <div className="bg-slate-900 rounded p-3">
+              <h5 className="text-slate-300 font-semibold mb-2">Debug Information</h5>
+              <div className="text-xs text-slate-400 space-y-1">
+                <div>Backend Health Endpoint: <code>/api/health/test-rtsp</code></div>
+                <div>Expected Content-Type: <code>application/json</code></div>
+                <div>If you see HTML/DOCTYPE errors, the backend route is not properly mounted</div>
+              </div>
             </div>
 
             {rtspTestResults.length > 0 && (

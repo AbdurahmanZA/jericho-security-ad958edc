@@ -79,12 +79,15 @@ app.set('activeStreams', activeStreams);
 app.set('clients', wsManager.clients);
 app.set('wsManager', wsManager);
 
-// Mount routes
+// Mount routes - Health routes MUST be mounted first and correctly
 app.use('/api/health', healthRoutes);
 app.use('/api/cameras', cameraRoutes);
 app.use('/api/streams', streamRoutes);
 app.use('/api/webrtc', webrtcRoutes);
 app.use('/api/sip', initializeSipRoutes(db));
+
+// Serve static HLS files
+app.use('/hls', express.static(path.join(__dirname, 'hls')));
 
 // Basic API routes
 app.get('/api/status', (req, res) => {
@@ -97,12 +100,36 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// Add a test endpoint to verify API is working
+app.get('/api/test', (req, res) => {
+  res.json({
+    status: 'API is working',
+    timestamp: new Date().toISOString(),
+    endpoints: [
+      '/api/health/database',
+      '/api/health/ffmpeg', 
+      '/api/health/streams',
+      '/api/health/test-rtsp'
+    ]
+  });
+});
+
+// Catch-all for API routes that don't exist
+app.use('/api/*', (req, res) => {
+  res.status(404).json({
+    error: 'API endpoint not found',
+    path: req.path,
+    method: req.method
+  });
+});
+
 const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
   console.log(`Jericho Security Backend Server running on port ${PORT}`);
   console.log(`WebSocket server ready for connections at /api/ws`);
   console.log(`SIP/VoIP API available at /api/sip`);
+  console.log(`Health checks available at /api/health/*`);
 });
 
 // Graceful shutdown
