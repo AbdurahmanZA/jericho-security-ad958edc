@@ -1,4 +1,6 @@
+
 const WebSocket = require('ws');
+const fetch = require('node-fetch');
 
 class WebSocketManager {
   constructor(server) {
@@ -95,7 +97,6 @@ class WebSocketManager {
       console.log('🔗 Making HTTP request to backend stream API...');
       
       // Make internal API call to start the stream
-      const fetch = require('node-fetch');
       const apiUrl = `http://localhost:3001/api/streams/${cameraId}/start`;
       const requestBody = { url: rtspUrl };
       
@@ -154,7 +155,6 @@ class WebSocketManager {
     console.log(`⏹️ Stopping stream for camera ${cameraId}`);
     
     try {
-      const fetch = require('node-fetch');
       const apiUrl = `http://localhost:3001/api/streams/${cameraId}/stop`;
       
       console.log('📤 Stop API Request:', apiUrl);
