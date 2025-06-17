@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Brain, Download, Play, Square, Settings, Cpu } from 'lucide-react';
+import { Brain, Download, Play, Square, Settings, Cpu, Check } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface AIModel {
@@ -39,7 +39,7 @@ export const AISettings: React.FC = () => {
     processInterval: 5
   });
 
-  const [models] = useState<AIModel[]>([
+  const [models, setModels] = useState<AIModel[]>([
     {
       id: 'coco-ssd',
       name: 'COCO-SSD',
@@ -73,6 +73,7 @@ export const AISettings: React.FC = () => {
   ]);
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [downloadingModels, setDownloadingModels] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
   const detectableClasses = [
@@ -84,6 +85,7 @@ export const AISettings: React.FC = () => {
 
   useEffect(() => {
     loadConfig();
+    loadModelStates();
   }, []);
 
   const loadConfig = () => {
@@ -91,6 +93,18 @@ export const AISettings: React.FC = () => {
     if (savedConfig) {
       setConfig(JSON.parse(savedConfig));
     }
+  };
+
+  const loadModelStates = () => {
+    const savedModels = localStorage.getItem('jericho-ai-models');
+    if (savedModels) {
+      setModels(JSON.parse(savedModels));
+    }
+  };
+
+  const saveModelStates = (updatedModels: AIModel[]) => {
+    setModels(updatedModels);
+    localStorage.setItem('jericho-ai-models', JSON.stringify(updatedModels));
   };
 
   const saveConfig = (newConfig: AIConfig) => {
@@ -102,18 +116,34 @@ export const AISettings: React.FC = () => {
     });
   };
 
-  const downloadModel = (modelId: string) => {
+  const downloadModel = async (modelId: string) => {
+    setDownloadingModels(prev => new Set([...prev, modelId]));
+    
     toast({
       title: "Downloading Model",
       description: `Starting download of ${modelId}...`,
     });
+
     // Simulate download process
-    setTimeout(() => {
-      toast({
-        title: "Model Downloaded",
-        description: `${modelId} is ready for use`,
-      });
-    }, 2000);
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    const updatedModels = models.map(model => 
+      model.id === modelId 
+        ? { ...model, downloaded: true }
+        : model
+    );
+
+    saveModelStates(updatedModels);
+    setDownloadingModels(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(modelId);
+      return newSet;
+    });
+
+    toast({
+      title: "Model Downloaded",
+      description: `${modelId} is ready for use`,
+    });
   };
 
   const toggleProcessing = () => {
@@ -122,6 +152,14 @@ export const AISettings: React.FC = () => {
       title: isProcessing ? "AI Processing Stopped" : "AI Processing Started",
       description: isProcessing ? "Object detection paused" : "Now analyzing camera feeds",
     });
+  };
+
+  const getAvailableModels = () => {
+    return models.filter(model => model.downloaded);
+  };
+
+  const getCurrentModel = () => {
+    return models.find(model => model.id === config.model);
   };
 
   return (
@@ -160,6 +198,22 @@ export const AISettings: React.FC = () => {
             Available Models
           </h4>
           
+          {/* Current Model Display */}
+          {getCurrentModel() && (
+            <div className="p-4 border-2 border-jericho-accent rounded-lg bg-card">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-2">
+                  <span className="font-semibold text-jericho-accent">Current Model:</span>
+                  <span className="font-medium">{getCurrentModel()?.name}</span>
+                  <Badge variant="default" className="bg-jericho-accent">Active</Badge>
+                </div>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {getCurrentModel()?.size} • {getCurrentModel()?.accuracy} accuracy • {getCurrentModel()?.speed} speed
+              </div>
+            </div>
+          )}
+          
           <div className="space-y-3">
             {models.map((model) => (
               <div key={model.id} className="p-4 border border-border rounded-lg bg-card">
@@ -167,6 +221,9 @@ export const AISettings: React.FC = () => {
                   <div className="flex items-center space-x-2">
                     <span className="font-semibold">{model.name}</span>
                     <Badge variant="outline">{model.type.toUpperCase()}</Badge>
+                    {model.id === config.model && (
+                      <Badge variant="default" className="bg-green-600">Selected</Badge>
+                    )}
                   </div>
                   <div className="flex space-x-2">
                     {!model.downloaded ? (
@@ -174,12 +231,25 @@ export const AISettings: React.FC = () => {
                         variant="outline"
                         size="sm"
                         onClick={() => downloadModel(model.id)}
+                        disabled={downloadingModels.has(model.id)}
                       >
-                        <Download className="w-3 h-3 mr-1" />
-                        Download
+                        {downloadingModels.has(model.id) ? (
+                          <>
+                            <div className="w-3 h-3 mr-1 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                            Downloading...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="w-3 h-3 mr-1" />
+                            Download
+                          </>
+                        )}
                       </Button>
                     ) : (
-                      <Badge variant="default" className="bg-green-600">Downloaded</Badge>
+                      <Badge variant="default" className="bg-green-600">
+                        <Check className="w-3 h-3 mr-1" />
+                        Downloaded
+                      </Badge>
                     )}
                   </div>
                 </div>
@@ -274,13 +344,24 @@ export const AISettings: React.FC = () => {
                   <SelectValue placeholder="Select model" />
                 </SelectTrigger>
                 <SelectContent>
-                  {models.map(model => (
-                    <SelectItem key={model.id} value={model.id}>
-                      {model.name} ({model.size})
+                  {getAvailableModels().length > 0 ? (
+                    getAvailableModels().map(model => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.name} ({model.size})
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="none" disabled>
+                      No models downloaded
                     </SelectItem>
-                  ))}
+                  )}
                 </SelectContent>
               </Select>
+              {getAvailableModels().length === 0 && (
+                <p className="text-xs text-orange-500 mt-1">
+                  Download a model first to enable AI processing
+                </p>
+              )}
             </div>
 
             <div>
