@@ -53,7 +53,7 @@ sudo apt install -y apache2 git build-essential python3 python3-pip certbot pyth
 
 echo "FFmpeg version: \$(ffmpeg -version | head -n1)"
 
-# Enable Apache modules (HTTP + HTTPS)
+# Enable Apache modules (HTTP + HTTPS + WebSocket Proxy)
 sudo a2enmod rewrite
 sudo a2enmod mime
 sudo a2enmod headers
@@ -106,7 +106,7 @@ sudo chmod 755 /opt/jericho-backend/snapshots
 sudo ln -sf /opt/jericho-backend/hls /var/www/html/hls
 sudo ln -sf /opt/jericho-backend/snapshots /var/www/html/snapshots
 
-# Configure Apache for proper HLS file serving
+# Configure Apache for proper HLS file serving with WebSocket proxy
 sudo tee /etc/apache2/sites-available/jericho-hls.conf > /dev/null <<'EOAPACHECONF'
 <VirtualHost *:80>
     ServerAdmin admin@jericho.local
@@ -150,10 +150,15 @@ sudo tee /etc/apache2/sites-available/jericho-hls.conf > /dev/null <<'EOAPACHECO
 
     # Proxy settings for backend API and WebSocket
     ProxyPreserveHost On
+    ProxyRequests Off
+    
+    # WebSocket proxy for /api/ws
+    ProxyPass /api/ws ws://localhost:3001/api/ws
+    ProxyPassReverse /api/ws ws://localhost:3001/api/ws
+    
+    # Regular HTTP proxy for all other API requests
     ProxyPass /api/ http://localhost:3001/api/
     ProxyPassReverse /api/ http://localhost:3001/api/
-    ProxyPass /ws/ ws://localhost:3001/
-    ProxyPassReverse /ws/ ws://localhost:3001/
 
     ErrorLog \${APACHE_LOG_DIR}/error.log
     CustomLog \${APACHE_LOG_DIR}/access.log combined
@@ -274,10 +279,15 @@ if [ -n "\$DOMAIN" ]; then
 
     # Proxy settings for backend API, HLS, WebSocket, etc.
     ProxyPreserveHost On
+    ProxyRequests Off
+    
+    # WebSocket proxy for /api/ws
+    ProxyPass /api/ws ws://localhost:3001/api/ws
+    ProxyPassReverse /api/ws ws://localhost:3001/api/ws
+    
+    # Regular HTTP proxy for all other API requests
     ProxyPass /api/ http://localhost:3001/api/
     ProxyPassReverse /api/ http://localhost:3001/api/
-    ProxyPass /ws/ ws://localhost:3001/
-    ProxyPassReverse /ws/ ws://localhost:3001/
 
     ErrorLog \${APACHE_LOG_DIR}/error.log
     CustomLog \${APACHE_LOG_DIR}/access.log combined
@@ -331,8 +341,9 @@ echo "Asterisk CLI: sudo asterisk -r"
 echo "SIP peers: sudo asterisk -rx 'sip show peers'"
 echo "Check HLS files: ls -la /opt/jericho-backend/hls/"
 echo "Test HLS serving: curl -I http://localhost/hls/"
+echo "Test WebSocket: Check frontend logs for 'Connected to backend via wss://'"
 echo "=================================="
 
 echo "\\n🟢 HTTPS ACCESS: If you have a domain pointing to this server, update the DOMAIN variable in this script and rerun."
 echo "\\n🔄 VoIP is configured with GSM codec support (default) for reliable emergency communications."
-echo "\\n✅ HLS serving is now properly configured with CORS headers and MIME types for better browser compatibility."`;
+echo "\\n✅ HLS serving and WebSocket proxy are now properly configured with CORS headers and MIME types for better browser compatibility."`;
