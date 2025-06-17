@@ -1,6 +1,5 @@
-
 import React, { useRef, useEffect, useState } from 'react';
-import { Play, Square, AlertTriangle, Clock } from 'lucide-react';
+import { Play, Square, AlertTriangle, Clock, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useStreamingPlayer } from '@/hooks/useStreamingPlayer';
 
@@ -10,6 +9,7 @@ interface VideoPlayerProps {
   autoStart?: boolean;
   onLog?: (msg: string) => void;
   showControls?: boolean;
+  onSnapshot?: (cameraId: number) => void;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -17,7 +17,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   className = "",
   autoStart = false,
   onLog,
-  showControls = true
+  showControls = true,
+  onSnapshot
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -33,6 +34,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
     if (updates.lastError) {
       setLastError(updates.lastError);
+    }
+  };
+
+  const handleSnapshot = () => {
+    if (videoRef.current && onSnapshot) {
+      onSnapshot(cameraId);
     }
   };
 
@@ -108,6 +115,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {/* Controls */}
       {showControls && (
         <div className="absolute bottom-2 right-2 flex space-x-1">
+          {onSnapshot && isConnected && (
+            <Button
+              size="sm"
+              onClick={handleSnapshot}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <Camera className="w-3 h-3" />
+            </Button>
+          )}
           {!isConnected ? (
             <Button
               size="sm"

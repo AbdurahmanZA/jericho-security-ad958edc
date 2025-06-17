@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Trash2, Save, TestTube, Monitor, Eye, EyeOff, Clock, Zap } from 'lucide-react';
+import { Trash2, Save, TestTube, Monitor, Eye, EyeOff, Clock, Zap, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface StreamConfig {
@@ -18,6 +18,7 @@ interface StreamConfig {
 export const StreamSettings: React.FC = () => {
   const [streams, setStreams] = useState<StreamConfig[]>([]);
   const [editingStream, setEditingStream] = useState<StreamConfig | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -54,6 +55,7 @@ export const StreamSettings: React.FC = () => {
     }, {} as Record<number, string>);
     
     localStorage.setItem('jericho-stream-urls', JSON.stringify(urlObject));
+    setHasUnsavedChanges(false);
     
     toast({
       title: "HLS Streams Updated",
@@ -65,7 +67,12 @@ export const StreamSettings: React.FC = () => {
     const updatedStreams = streams.map(stream => 
       stream.id === id ? { ...stream, ...updates } : stream
     );
-    saveStreams(updatedStreams);
+    setStreams(updatedStreams);
+    setHasUnsavedChanges(true);
+  };
+
+  const handleSaveAll = () => {
+    saveStreams(streams);
   };
 
   const removeStream = (id: number) => {
@@ -121,11 +128,30 @@ export const StreamSettings: React.FC = () => {
             Configure RTSP camera streams for HLS conversion (~5s latency, optimized for multiple cameras)
           </p>
         </div>
-        <Button onClick={addNewStream} className="jericho-btn-accent">
-          <Monitor className="w-4 h-4 mr-2" />
-          Add Stream
-        </Button>
+        <div className="flex items-center space-x-2">
+          <Button 
+            onClick={handleSaveAll}
+            disabled={!hasUnsavedChanges}
+            className="jericho-btn-primary"
+          >
+            <Save className="w-4 h-4 mr-2" />
+            Save All Changes
+          </Button>
+          <Button onClick={addNewStream} className="jericho-btn-accent">
+            <Monitor className="w-4 h-4 mr-2" />
+            Add Stream
+          </Button>
+        </div>
       </div>
+
+      {hasUnsavedChanges && (
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            You have unsaved changes. Click "Save All Changes" to apply them.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* HLS Information Alert */}
       <Alert>

@@ -7,6 +7,7 @@ import { useStreamingPlayer } from '@/hooks/useStreamingPlayer';
 import { CameraTile } from './CameraTile';
 import { SaveLayoutButton } from './SaveLayoutButton';
 import { ComprehensiveCameraSetup } from './ComprehensiveCameraSetup';
+import { ClearConnectionsButton } from './ClearConnectionsButton';
 
 interface CameraGridProps {
   layout: number;
@@ -164,6 +165,24 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
     }
   };
 
+  const clearAllConnections = () => {
+    // Stop all active streams
+    Object.keys(activeStreams).forEach(cameraIdStr => {
+      const cameraId = parseInt(cameraIdStr);
+      if (activeStreams[cameraId]) {
+        stopStream(cameraId);
+      }
+    });
+    
+    // Clear all HLS instances
+    Object.keys(hlsInstancesRef.current).forEach(cameraIdStr => {
+      const cameraId = parseInt(cameraIdStr);
+      cleanupPlayer(cameraId, onLog);
+    });
+    
+    onLog?.("All camera connections cleared");
+  };
+
   useEffect(() => {
     const savedUrls = localStorage.getItem('jericho-camera-urls');
     const savedNames = localStorage.getItem('jericho-camera-names');
@@ -316,6 +335,8 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
             cameraUrls={cameraUrls}
             cameraNames={cameraNames}
           />
+          
+          <ClearConnectionsButton onClearAll={clearAllConnections} />
         </div>
       </div>
 
