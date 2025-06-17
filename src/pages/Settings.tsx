@@ -397,17 +397,12 @@ const Settings = () => {
                       </Card>
 
                       {/* Integration Tabs */}
-                      <Tabs defaultValue="hikvision" className="space-y-4">
-                        <TabsList className="grid w-full grid-cols-4">
-                          <TabsTrigger value="hikvision">Hikvision Cloud</TabsTrigger>
+                      <Tabs defaultValue="hikconnect" className="space-y-4">
+                        <TabsList className="grid w-full grid-cols-3">
                           <TabsTrigger value="hikconnect">Hik-Connect API</TabsTrigger>
                           <TabsTrigger value="discord">Discord Alerts</TabsTrigger>
                           <TabsTrigger value="knowledge">Knowledge Base</TabsTrigger>
                         </TabsList>
-
-                        <TabsContent value="hikvision">
-                          <HikvisionSettings />
-                        </TabsContent>
 
                         <TabsContent value="hikconnect">
                           <HikConnectIntegration />
