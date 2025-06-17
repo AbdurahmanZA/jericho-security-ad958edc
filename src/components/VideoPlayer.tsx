@@ -1,7 +1,9 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { Play, Square, AlertTriangle, Clock, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useStreamingPlayer } from '@/hooks/useStreamingPlayer';
+import { CameraState } from '@/hooks/useCameraState';
 
 interface VideoPlayerProps {
   cameraId: number;
@@ -10,6 +12,7 @@ interface VideoPlayerProps {
   onLog?: (msg: string) => void;
   showControls?: boolean;
   onSnapshot?: (cameraId: number) => void;
+  updateCameraState?: (id: number, updates: Partial<CameraState>) => void;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -18,7 +21,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   autoStart = false,
   onLog,
   showControls = true,
-  onSnapshot
+  onSnapshot,
+  updateCameraState
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -27,13 +31,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const { setupPlayer, cleanupPlayer } = useStreamingPlayer();
 
-  const updateCameraState = (id: number, updates: any) => {
+  const handleCameraStateUpdate = (id: number, updates: any) => {
     if (updates.hlsAvailable !== undefined) {
       setIsConnected(updates.hlsAvailable);
       setConnectionStatus(updates.hlsAvailable ? 'connected' : 'failed');
     }
     if (updates.lastError) {
       setLastError(updates.lastError);
+    }
+    
+    // Pass updates to parent component if provided
+    if (updateCameraState) {
+      updateCameraState(id, updates);
     }
   };
 
@@ -59,7 +68,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setLastError('');
     onLog?.(`[VideoPlayer ${cameraId}] Starting HLS connection`);
     
-    setupPlayer(cameraId, videoRef.current, onLog, updateCameraState);
+    setupPlayer(cameraId, videoRef.current, onLog, handleCameraStateUpdate);
   };
 
   const handleDisconnect = () => {
