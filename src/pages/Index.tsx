@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -85,53 +84,50 @@ const Index = () => {
     const connectBackendMonitoring = () => {
       addBackendLog("Attempting WebSocket connection to backend server");
       
-      // Try WebSocket connection - first try secure, then fallback to insecure
-      const tryConnection = (wsUrl: string) => {
-        const ws = new WebSocket(wsUrl);
-        backendWsRef.current = ws;
+      // Use the correct WebSocket URL that matches your backend configuration
+      const wsUrl = 'wss://192.168.0.138/api/ws';
+      
+      const ws = new WebSocket(wsUrl);
+      backendWsRef.current = ws;
 
-        ws.onopen = () => {
-          addBackendLog(`Connected to backend via ${wsUrl}`);
-          setBackendStatus(prev => ({ ...prev, isConnected: true, lastHeartbeat: new Date() }));
-          
-          if (reconnectTimeout) {
-            clearTimeout(reconnectTimeout);
-          }
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            
-            if (data.type === 'log') {
-              addBackendLog(data.message);
-            } else if (data.type === 'status' || data.type === 'connection_status') {
-              setBackendStatus(prev => ({
-                ...prev,
-                activeStreams: data.activeStreams || prev.activeStreams,
-                lastHeartbeat: new Date()
-              }));
-              addBackendLog(`System status updated - Active streams: ${data.activeStreams || 0}`);
-            }
-          } catch (error) {
-            // Ignore parse errors
-          }
-        };
-
-        ws.onclose = () => {
-          addBackendLog("Backend monitoring disconnected");
-          setBackendStatus(prev => ({ ...prev, isConnected: false }));
-          
-          reconnectTimeout = setTimeout(connectBackendMonitoring, 5000);
-        };
-
-        ws.onerror = () => {
-          addBackendLog(`WebSocket connection failed to ${wsUrl}`);
-        };
+      ws.onopen = () => {
+        addBackendLog(`Connected to backend via ${wsUrl}`);
+        setBackendStatus(prev => ({ ...prev, isConnected: true, lastHeartbeat: new Date() }));
+        
+        if (reconnectTimeout) {
+          clearTimeout(reconnectTimeout);
+        }
       };
 
-      // Try secure WebSocket first, then HTTP if that fails
-      tryConnection('wss://192.168.0.138/ws');
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'log') {
+            addBackendLog(data.message);
+          } else if (data.type === 'status' || data.type === 'connection_status') {
+            setBackendStatus(prev => ({
+              ...prev,
+              activeStreams: data.activeStreams || prev.activeStreams,
+              lastHeartbeat: new Date()
+            }));
+            addBackendLog(`System status updated - Active streams: ${data.activeStreams || 0}`);
+          }
+        } catch (error) {
+          // Ignore parse errors
+        }
+      };
+
+      ws.onclose = () => {
+        addBackendLog("Backend monitoring disconnected");
+        setBackendStatus(prev => ({ ...prev, isConnected: false }));
+        
+        reconnectTimeout = setTimeout(connectBackendMonitoring, 5000);
+      };
+
+      ws.onerror = () => {
+        addBackendLog(`WebSocket connection failed to ${wsUrl}`);
+      };
     };
 
     connectBackendMonitoring();

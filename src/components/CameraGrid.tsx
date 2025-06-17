@@ -78,8 +78,8 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   useEffect(() => {
     let ws: WebSocket;
     function connectWebSocket() {
-      // Use the correct WebSocket URL for your backend
-      const wsUrl = `wss://192.168.0.138/ws`;
+      // Use the correct WebSocket URL that matches your backend
+      const wsUrl = `wss://192.168.0.138/api/ws`;
 
       ws = new WebSocket(wsUrl);
       ws.onopen = () => {
@@ -90,7 +90,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
         setTimeout(connectWebSocket, 5000);
       };
       ws.onerror = (e) => {
-        if (onLog) onLog("WebSocket connection error - backend server may not be running");
+        if (onLog) onLog("WebSocket connection error - checking backend connectivity");
       };
       ws.onmessage = (event) => {
         try {

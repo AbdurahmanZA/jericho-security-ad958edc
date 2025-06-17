@@ -13,7 +13,7 @@ export const useWebRTC = (): WebRTCPlayer => {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
 
   const connectWebRTCSignaling = useCallback(() => {
-    // WebSocket URL for WebRTC signaling using HTTPS
+    // WebSocket URL for WebRTC signaling using the correct backend URL
     const wsUrl = `wss://192.168.0.138/api/ws`;
 
     console.log('Connecting to WebRTC signaling server:', wsUrl);
