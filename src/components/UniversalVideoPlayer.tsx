@@ -41,14 +41,17 @@ export const UniversalVideoPlayer: React.FC<UniversalVideoPlayerProps> = ({
         setStreamStatus(status);
         setCurrentStreamType(status.streamType);
         setIsConnecting(false);
+        logMessage(`Stream status updated: ${status.streamType} (active: ${status.isActive})`);
       }
     };
 
     streamManagerRef.current = new RTSPStreamManager(handleStatusUpdate, logMessage);
+    logMessage('Stream manager initialized');
 
     return () => {
       if (streamManagerRef.current) {
         streamManagerRef.current.destroy();
+        logMessage('Stream manager destroyed');
       }
     };
   }, [cameraId, logMessage]);
@@ -79,7 +82,8 @@ export const UniversalVideoPlayer: React.FC<UniversalVideoPlayerProps> = ({
       streamManagerRef.current.startStream(cameraId).then(success => {
         if (!success) {
           setIsConnecting(false);
-          logMessage('All stream types failed to start');
+          setCurrentStreamType('none');
+          logMessage('All stream types failed to start - falling back to VideoPlayer');
         }
       });
     } else {
@@ -89,6 +93,7 @@ export const UniversalVideoPlayer: React.FC<UniversalVideoPlayerProps> = ({
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
+      logMessage('Stream stopped');
     }
   }, [isActive, rtspUrl, cameraId, logMessage]);
 
@@ -96,14 +101,15 @@ export const UniversalVideoPlayer: React.FC<UniversalVideoPlayerProps> = ({
   const handleJSMpegConnected = useCallback(() => {
     logMessage('JSMpeg stream connected successfully');
     setIsConnecting(false);
+    setCurrentStreamType('jsmpeg');
   }, [logMessage]);
 
   const handleJSMpegDisconnected = useCallback(() => {
     logMessage('JSMpeg stream disconnected');
+    setCurrentStreamType('none');
     if (isActive && streamManagerRef.current) {
-      // Try to reconnect after a delay
+      logMessage('Attempting to reconnect...');
       reconnectTimeoutRef.current = setTimeout(() => {
-        logMessage('Attempting to reconnect JSMpeg stream...');
         setIsConnecting(true);
         streamManagerRef.current?.startStream(cameraId);
       }, 3000);
@@ -112,8 +118,8 @@ export const UniversalVideoPlayer: React.FC<UniversalVideoPlayerProps> = ({
 
   const handleJSMpegError = useCallback((error: string) => {
     logMessage(`JSMpeg error: ${error}`);
+    setCurrentStreamType('none');
     if (streamManagerRef.current) {
-      // Try fallback to other stream types
       logMessage('Falling back to alternative stream types...');
       streamManagerRef.current.startStream(cameraId);
     }
@@ -140,6 +146,17 @@ export const UniversalVideoPlayer: React.FC<UniversalVideoPlayerProps> = ({
 
   const renderPlayer = () => {
     if (!isActive || currentStreamType === 'none') {
+      // Always fall back to VideoPlayer for WebRTC/HLS when JSMpeg is not available
+      if (isActive && rtspUrl) {
+        return (
+          <VideoPlayer
+            cameraId={cameraId}
+            isActive={isActive}
+            onLog={onLog}
+          />
+        );
+      }
+      
       return (
         <div className="w-full h-full bg-gray-800 flex items-center justify-center">
           <div className="text-center">
@@ -187,11 +204,9 @@ export const UniversalVideoPlayer: React.FC<UniversalVideoPlayerProps> = ({
       {/* Enhanced stream indicator */}
       <div className="absolute top-2 right-2 px-2 py-1 bg-black bg-opacity-70 rounded text-xs">
         <span className={indicator.color}>{indicator.text}</span>
-        {streamStatus && (
+        {streamStatus && streamStatus.reconnectAttempts > 0 && (
           <div className="text-xs text-gray-400 mt-1">
-            {streamStatus.reconnectAttempts > 0 && 
-              `Retry: ${streamStatus.reconnectAttempts}`
-            }
+            Retry: {streamStatus.reconnectAttempts}
           </div>
         )}
       </div>
@@ -201,7 +216,7 @@ export const UniversalVideoPlayer: React.FC<UniversalVideoPlayerProps> = ({
         <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
           <div className="text-white text-sm">
             <div className="animate-spin w-6 h-6 border-2 border-white border-t-transparent rounded-full mx-auto mb-2"></div>
-            Connecting...
+            Connecting to stream...
           </div>
         </div>
       )}

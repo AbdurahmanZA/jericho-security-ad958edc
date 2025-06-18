@@ -9,6 +9,7 @@ import { useCameraHLS } from '@/hooks/useCameraHLS';
 import { CameraTile } from './CameraTile';
 import { SaveLayoutButton } from './SaveLayoutButton';
 import { ComprehensiveCameraSetup } from './ComprehensiveCameraSetup';
+import { UniversalVideoPlayer } from './UniversalVideoPlayer';
 
 interface CameraGridProps {
   layout: number;
@@ -27,6 +28,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   const [tempUrl, setTempUrl] = useState('');
   const [tempName, setTempName] = useState('');
   const [showCameraSetup, setShowCameraSetup] = useState(false);
+  const [useUniversalPlayer, setUseUniversalPlayer] = useState(true);
   const { toast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
   const retryTimeoutsRef = useRef<Record<number, NodeJS.Timeout>>({});
@@ -198,25 +200,18 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
       setEditingCamera(null);
       setTempUrl('');
       
-      updateCameraState(cameraId, {
-        retryCount: 0,
-        lastError: '',
-        connectionStatus: 'idle',
-        hlsAvailable: false
-      });
+      // Activate the stream
+      setActiveStreams(prev => ({ ...prev, [cameraId]: true }));
       
-      if (retryTimeoutsRef.current[cameraId]) {
-        clearTimeout(retryTimeoutsRef.current[cameraId]);
-        delete retryTimeoutsRef.current[cameraId];
+      if (onLog) {
+        onLog(`Camera ${cameraId} configured with URL: ${url}`);
       }
-      
-      await startStream(cameraId, url);
       
       toast({
         title: "Camera URL Updated",
         description: `Camera ${cameraId} configured successfully`,
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Invalid URL",
         description: error.message,
@@ -321,18 +316,28 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   const handleAddCameras = (cameras: Array<{ id: number; name: string; url: string; }>) => {
     const newUrls = { ...cameraUrls };
     const newNames = { ...cameraNames };
+    const newActiveStreams = { ...activeStreams };
     
     cameras.forEach(camera => {
       newUrls[camera.id] = camera.url;
       newNames[camera.id] = camera.name;
+      newActiveStreams[camera.id] = true;
     });
     
     setCameraUrls(newUrls);
     setCameraNames(newNames);
+    setActiveStreams(newActiveStreams);
     
     if (onLog) {
       onLog(`Added ${cameras.length} cameras from comprehensive setup`);
     }
+  };
+
+  const toggleStream = (cameraId: number) => {
+    setActiveStreams(prev => ({
+      ...prev,
+      [cameraId]: !prev[cameraId]
+    }));
   };
 
   useEffect(() => {
@@ -360,33 +365,167 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   }, [activeStreams, layout, isFullscreen, currentPage, setupHLSPlayer, cleanupHLSPlayer, hlsInstancesRef, onLog, updateCameraState]);
 
   const renderCamera = (cameraId: number) => {
+    const url = cameraUrls[cameraId];
+    const name = cameraNames[cameraId] || `Camera ${cameraId}`;
+    const isActive = activeStreams[cameraId] && !!url;
+
+    if (useUniversalPlayer && url) {
+      return (
+        <div key={cameraId} className="relative bg-black rounded-lg overflow-hidden">
+          <UniversalVideoPlayer
+            cameraId={cameraId}
+            rtspUrl={url}
+            name={name}
+            isActive={isActive}
+            onLog={onLog}
+            className="w-full h-full"
+          />
+          
+          {/* Camera controls overlay */}
+          <div className="absolute bottom-2 left-2 flex space-x-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => toggleStream(cameraId)}
+              className="bg-black bg-opacity-70 text-white hover:bg-opacity-90"
+            >
+              {isActive ? <Square className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onSnapshot(cameraId)}
+              className="bg-black bg-opacity-70 text-white hover:bg-opacity-90"
+            >
+              <Image className="w-4 h-4" />
+            </Button>
+          </div>
+
+          {/* Camera name */}
+          <div className="absolute bottom-2 right-2 px-2 py-1 bg-black bg-opacity-70 rounded text-xs text-white">
+            {name}
+          </div>
+        </div>
+      );
+    }
+
+    // Fallback to original tile-based approach
     return (
-      <CameraTile
-        key={cameraId}
-        cameraId={cameraId}
-        url={cameraUrls[cameraId]}
-        name={cameraNames[cameraId] || `Camera ${cameraId}`}
-        isActive={activeStreams[cameraId]}
-        isEditing={editingCamera === cameraId}
-        isEditingName={editingName === cameraId}
-        cameraState={cameraStates[cameraId] || initializeCameraState(cameraId)}
-        tempUrl={tempUrl}
-        tempName={tempName}
-        setEditingCamera={setEditingCamera}
-        setEditingName={setEditingName}
-        setTempUrl={setTempUrl}
-        setTempName={setTempName}
-        handleUrlSubmit={handleUrlSubmit}
-        handleNameSubmit={handleNameSubmit}
-        onSnapshot={onSnapshot}
-        startStream={startStream}
-        stopStream={stopStream}
-        resetCamera={resetCamera}
-        MAX_RETRIES={MAX_RETRIES}
-        onLog={onLog}
-        videoRefs={videoRefs}
-        updateCameraState={updateCameraState}
-      />
+      <div key={cameraId} className="relative bg-gray-800 rounded-lg p-4 flex flex-col items-center justify-center min-h-[200px]">
+        {editingCamera === cameraId ? (
+          <div className="w-full space-y-3">
+            <Input
+              value={tempUrl}
+              onChange={(e) => setTempUrl(e.target.value)}
+              placeholder="rtsp://username:password@192.168.1.100:554/stream1"
+              className="text-sm"
+              autoFocus
+            />
+            <div className="flex space-x-2">
+              <Button
+                onClick={() => handleUrlSubmit(cameraId)}
+                size="sm"
+                className="flex-1"
+              >
+                <Check className="w-4 h-4 mr-1" />
+                Save
+              </Button>
+              <Button
+                onClick={() => {
+                  setEditingCamera(null);
+                  setTempUrl('');
+                }}
+                variant="outline"
+                size="sm"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center space-y-3">
+            <Camera className="w-12 h-12 mx-auto text-gray-400" />
+            
+            {editingName === cameraId ? (
+              <div className="space-y-2">
+                <Input
+                  value={tempName}
+                  onChange={(e) => setTempName(e.target.value)}
+                  className="text-center text-sm"
+                  autoFocus
+                />
+                <div className="flex space-x-2">
+                  <Button
+                    onClick={() => handleNameSubmit(cameraId)}
+                    size="sm"
+                    className="flex-1"
+                  >
+                    <Check className="w-3 h-3" />
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setEditingName(null);
+                      setTempName('');
+                    }}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div
+                className="cursor-pointer hover:text-blue-400 transition-colors"
+                onClick={() => {
+                  setEditingName(cameraId);
+                  setTempName(name);
+                }}
+              >
+                <h3 className="font-semibold text-white">{name}</h3>
+                <Edit2 className="w-3 h-3 mx-auto mt-1 text-gray-500" />
+              </div>
+            )}
+            
+            {url ? (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-400 truncate max-w-full">{url}</p>
+                <div className="flex space-x-2">
+                  <Button
+                    onClick={() => toggleStream(cameraId)}
+                    size="sm"
+                    variant={isActive ? "destructive" : "default"}
+                    className="flex-1"
+                  >
+                    {isActive ? <Square className="w-4 h-4 mr-1" /> : <Play className="w-4 h-4 mr-1" />}
+                    {isActive ? 'Stop' : 'Start'}
+                  </Button>
+                  <Button
+                    onClick={() => onSnapshot(cameraId)}
+                    size="sm"
+                    variant="outline"
+                    disabled={!isActive}
+                  >
+                    <Image className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                onClick={() => {
+                  setEditingCamera(cameraId);
+                  setTempUrl('');
+                }}
+                size="sm"
+                variant="outline"
+                className="text-blue-400 border-blue-400 hover:bg-blue-400 hover:text-white"
+              >
+                Configure URL
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -406,6 +545,14 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
           <span className="text-sm text-gray-400">
             Page {currentPage} • {layout} cameras
           </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setUseUniversalPlayer(!useUniversalPlayer)}
+            className={useUniversalPlayer ? "bg-green-600 text-white" : ""}
+          >
+            {useUniversalPlayer ? 'Universal Player' : 'Legacy Player'}
+          </Button>
         </div>
         
         <div className="flex items-center space-x-2">
