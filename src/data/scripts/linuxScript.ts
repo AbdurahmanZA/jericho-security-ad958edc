@@ -1,5 +1,4 @@
 
-
 export const linuxScript = `#!/bin/bash
 # JERICHO Security System - Simplified Ubuntu 24.04 Installation
 # Self-contained installation that minimizes future update requirements
@@ -71,37 +70,111 @@ sudo chown -R www-data:www-data /opt/jericho-backend
 sudo ln -sf /opt/jericho-backend/hls /var/www/html/hls
 sudo ln -sf /opt/jericho-backend/snapshots /var/www/html/snapshots
 
-# Configure Apache site
-sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<'EOF'
+# Configure Apache site with FIXED WebSocket proxy configuration
+sudo tee /etc/apache2/sites-available/jericho-security.conf > /dev/null <<'EOF'
 <VirtualHost *:80>
+    ServerAdmin admin@jericho.local
     ServerName jericho.local
     DocumentRoot /var/www/html
 
-    # CORS headers for media files
+    # Enable CORS for all requests
     Header always set Access-Control-Allow-Origin "*"
-    Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS"
+    Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS, PUT, DELETE"
+    Header always set Access-Control-Allow-Headers "Content-Type, Authorization"
 
-    # HLS and media serving
+    # Enable rewrite engine
+    RewriteEngine On
+
+    # Serve HLS and snapshots files directly BEFORE SPA fallback
+    RewriteCond %{REQUEST_URI} ^/hls/
+    RewriteRule ^.*$ - [L]
+
+    RewriteCond %{REQUEST_URI} ^/snapshots/
+    RewriteRule ^.*$ - [L]
+
+    # CRITICAL: Exclude /assets/ from SPA fallback
+    RewriteCond %{REQUEST_URI} ^/assets/
+    RewriteRule .* - [L]
+
+    # SPA fallback - send everything else to index.html
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^.*$ /index.html [QSA,L]
+
+    # Set proper MIME types for assets
+    AddType application/javascript .js
+    AddType text/css .css
+    AddType application/json .json
+
+    # HLS specific configuration
     <Directory "/var/www/html/hls">
         Options Indexes FollowSymLinks
         AllowOverride None
         Require all granted
+
+        # Set proper MIME types for HLS
         AddType application/vnd.apple.mpegurl .m3u8
         AddType video/mp2t .ts
+
+        # Cache control for HLS files
+        ExpiresActive On
+        ExpiresByType application/vnd.apple.mpegurl "access plus 1 seconds"
+        ExpiresByType video/mp2t "access plus 10 seconds"
+
+        # Enable range requests for HLS segments
+        Header set Accept-Ranges bytes
     </Directory>
 
     <Directory "/var/www/html/snapshots">
         Options Indexes FollowSymLinks
         AllowOverride None
         Require all granted
+
+        # Cache control for snapshots
+        ExpiresActive On
+        ExpiresByType image/jpeg "access plus 1 hour"
+        ExpiresByType image/png "access plus 1 hour"
     </Directory>
 
-    # Proxy backend API and WebSocket
+    # Assets directory with proper MIME types
+    <Directory "/var/www/html/assets">
+        Options -Indexes
+        AllowOverride None
+        Require all granted
+
+        # Force correct MIME types for assets
+        <FilesMatch "\.js$">
+            ForceType application/javascript
+        </FilesMatch>
+        <FilesMatch "\.css$">
+            ForceType text/css
+        </FilesMatch>
+        <FilesMatch "\.json$">
+            ForceType application/json
+        </FilesMatch>
+    </Directory>
+
+    # Enable AllowOverride for main directory
+    <Directory "/var/www/html">
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    # Proxy settings for backend API and WebSocket - FIXED CONFIGURATION
     ProxyPreserveHost On
+    ProxyRequests Off
+
+    # WebSocket proxy for main backend WebSocket (FIXED)
+    ProxyPass /ws ws://localhost:3001/ws
+    ProxyPassReverse /ws ws://localhost:3001/ws
+
+    # WebSocket proxy for JSMpeg streams (NEW)
+    ProxyPass /jsmpeg/ ws://localhost:3001/jsmpeg/
+    ProxyPassReverse /jsmpeg/ ws://localhost:3001/jsmpeg/
+
+    # Regular HTTP proxy for all other API requests
     ProxyPass /api/ http://localhost:3001/api/
     ProxyPassReverse /api/ http://localhost:3001/api/
-    ProxyPass /ws/ ws://localhost:3001/
-    ProxyPassReverse /ws/ ws://localhost:3001/
 
     ErrorLog \${APACHE_LOG_DIR}/jericho_error.log
     CustomLog \${APACHE_LOG_DIR}/jericho_access.log combined
@@ -109,8 +182,8 @@ sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<'EOF'
 EOF
 
 # Enable site and disable default
-sudo a2ensite jericho.conf
-sudo a2dissite 000-default.conf
+sudo a2ensite jericho-security.conf
+sudo a2dissite 000-default.conf || true
 
 # Configure Asterisk permissions
 sudo usermod -a -G asterisk www-data
@@ -184,4 +257,3 @@ echo "   Run: sudo certbot --apache"
 echo "=================================="
 echo ""
 echo "✅ Installation complete! The system is ready to use."`;
-
