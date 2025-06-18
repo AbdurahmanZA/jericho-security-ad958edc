@@ -1,4 +1,5 @@
 
+
 export const linuxScript = `#!/bin/bash
 # JERICHO Security System - Simplified Ubuntu 24.04 Installation
 # Self-contained installation that minimizes future update requirements
@@ -28,6 +29,10 @@ fi
 echo "Node.js version: \$(node --version)"
 echo "npm version: \$(npm --version)"
 
+# Fix npm cache permissions
+sudo mkdir -p /var/www/.npm
+sudo chown -R www-data:www-data /var/www/.npm
+
 # Configure Apache modules (enable required ones)
 sudo a2enmod rewrite headers ssl proxy proxy_http proxy_wstunnel
 
@@ -56,7 +61,7 @@ sudo mkdir -p /opt/jericho-backend
 sudo cp -r backend/* /opt/jericho-backend/
 sudo chown -R www-data:www-data /opt/jericho-backend
 
-# Install backend dependencies
+# Install backend dependencies with proper permissions
 cd /opt/jericho-backend
 sudo -u www-data npm install
 
@@ -179,3 +184,4 @@ echo "   Run: sudo certbot --apache"
 echo "=================================="
 echo ""
 echo "✅ Installation complete! The system is ready to use."`;
+
