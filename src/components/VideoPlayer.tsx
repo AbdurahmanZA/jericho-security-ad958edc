@@ -2,6 +2,7 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { useCameraHLS } from '@/hooks/useCameraHLS';
+import { config } from '@/config/environment';
 
 interface VideoPlayerProps {
   cameraId: number;
@@ -42,42 +43,49 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
     setIsConnecting(false);
   }, [cameraId, cleanupWebRTCPlayer, cleanupHLSPlayer, logMessage]);
 
-  // Connection attempt function
+  // Connection attempt function with environment-aware configuration
   const attemptConnection = useCallback(async () => {
     if (!isActive || !videoRef.current) return;
 
     const currentAttempt = ++connectionAttemptRef.current;
     setIsConnecting(true);
-    logMessage(`Attempting connection for Camera ${cameraId}`);
+    logMessage(`Attempting connection for Camera ${cameraId} (${config.name} mode)`);
 
     try {
-      // Try WebRTC first
-      logMessage(`Trying WebRTC for Camera ${cameraId}`);
-      const webrtcSuccess = await setupWebRTCPlayer(cameraId, videoRef.current, logMessage);
-      
-      // Check if this is still the current attempt
-      if (currentAttempt !== connectionAttemptRef.current) return;
-      
-      if (webrtcSuccess) {
-        setStreamType('webrtc');
-        setIsConnecting(false);
-        logMessage(`Camera ${cameraId} connected via WebRTC (low latency)`);
-        updateState({ connectionType: 'webrtc', hlsAvailable: false });
-        return;
+      // Try WebRTC first if enabled
+      if (config.streaming.enableWebRTC) {
+        logMessage(`Trying WebRTC for Camera ${cameraId}`);
+        const webrtcSuccess = await setupWebRTCPlayer(cameraId, videoRef.current, logMessage);
+        
+        // Check if this is still the current attempt
+        if (currentAttempt !== connectionAttemptRef.current) return;
+        
+        if (webrtcSuccess) {
+          setStreamType('webrtc');
+          setIsConnecting(false);
+          logMessage(`Camera ${cameraId} connected via WebRTC (low latency)`);
+          updateState({ connectionType: 'webrtc', hlsAvailable: false });
+          return;
+        }
       }
 
-      // Fallback to HLS
-      logMessage(`WebRTC failed for Camera ${cameraId}, falling back to HLS`);
-      
-      // Small delay before trying HLS
-      setTimeout(() => {
-        if (currentAttempt === connectionAttemptRef.current && videoRef.current && isActive) {
-          setupHLSPlayer(cameraId, videoRef.current, logMessage, updateState);
-          setStreamType('hls');
-          setIsConnecting(false);
-          logMessage(`Camera ${cameraId} connected via HLS (standard latency)`);
-        }
-      }, 1000);
+      // Fallback to HLS if enabled
+      if (config.streaming.enableHLS) {
+        logMessage(`WebRTC failed for Camera ${cameraId}, falling back to HLS`);
+        
+        // Small delay before trying HLS
+        setTimeout(() => {
+          if (currentAttempt === connectionAttemptRef.current && videoRef.current && isActive) {
+            setupHLSPlayer(cameraId, videoRef.current, logMessage, updateState);
+            setStreamType('hls');
+            setIsConnecting(false);
+            logMessage(`Camera ${cameraId} connected via HLS (standard latency)`);
+          }
+        }, 1000);
+      } else {
+        setIsConnecting(false);
+        logMessage(`No fallback streams available for Camera ${cameraId}`);
+      }
 
     } catch (error) {
       if (currentAttempt === connectionAttemptRef.current) {
@@ -127,12 +135,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
         playsInline
         controls={false}
       >
-        Your browser does not support video playbook.
+        Your browser does not support video playback.
       </video>
       
       {/* Stream type indicator */}
       <div className="absolute top-2 right-2 px-2 py-1 bg-black bg-opacity-70 rounded text-xs">
         <span className={streamIndicator.color}>{streamIndicator.text}</span>
+        {config.name !== 'production' && (
+          <div className="text-xs text-gray-400">({config.name})</div>
+        )}
       </div>
     </div>
   );

@@ -13,7 +13,10 @@ const { initializeSipRoutes } = require('./routes/sip');
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+
+// Create multiple WebSocket servers for different purposes
+const wss = new WebSocket.Server({ server, path: '/ws' });
+const jsmpegWss = new WebSocket.Server({ server, path: '/jsmpeg' });
 
 // Initialize WebRTC signaling server
 const webrtcSignaling = new WebRTCSignalingServer(server);
@@ -21,6 +24,9 @@ const webrtcSignaling = new WebRTCSignalingServer(server);
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Serve static HLS files
+app.use('/hls', express.static(path.join(__dirname, 'hls')));
 
 // Initialize SQLite database
 const dbPath = path.join(__dirname, 'jericho.db');
@@ -71,9 +77,12 @@ db.serialize(() => {
 
 // Store active streams and WebSocket connections
 const activeStreams = new Map();
+const hlsStreams = new Map();
+const jsmpegStreams = new Map();
 const clients = new Set();
+const jsmpegClients = new Map(); // Map camera ID to WebSocket clients
 
-// WebSocket connection handling
+// WebSocket connection handling for general communication
 wss.on('connection', (ws) => {
   console.log('New WebSocket connection established');
   clients.add(ws);
@@ -96,6 +105,46 @@ wss.on('connection', (ws) => {
   }));
 });
 
+// JSMpeg WebSocket handling for video streaming
+jsmpegWss.on('connection', (ws, req) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const cameraId = parseInt(url.pathname.split('/').pop());
+  
+  if (!cameraId || isNaN(cameraId)) {
+    ws.close(1008, 'Invalid camera ID');
+    return;
+  }
+
+  console.log(`JSMpeg client connected for camera ${cameraId}`);
+  
+  if (!jsmpegClients.has(cameraId)) {
+    jsmpegClients.set(cameraId, new Set());
+  }
+  jsmpegClients.get(cameraId).add(ws);
+
+  ws.on('close', () => {
+    console.log(`JSMpeg client disconnected for camera ${cameraId}`);
+    const clients = jsmpegClients.get(cameraId);
+    if (clients) {
+      clients.delete(ws);
+      if (clients.size === 0) {
+        jsmpegClients.delete(cameraId);
+        // Stop JSMpeg stream if no clients
+        stopJSMpegStream(cameraId);
+      }
+    }
+  });
+
+  ws.on('error', (error) => {
+    console.error(`JSMpeg WebSocket error for camera ${cameraId}:`, error);
+  });
+
+  // Start JSMpeg stream if not already running
+  if (!jsmpegStreams.has(cameraId)) {
+    startJSMpegStream(cameraId);
+  }
+});
+
 // Broadcast to all connected clients
 function broadcast(data) {
   const message = JSON.stringify(data);
@@ -104,6 +153,84 @@ function broadcast(data) {
       client.send(message);
     }
   });
+}
+
+// Broadcast JSMpeg data to specific camera clients
+function broadcastJSMpeg(cameraId, data) {
+  const clients = jsmpegClients.get(cameraId);
+  if (clients) {
+    clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(data);
+      }
+    });
+  }
+}
+
+// Start JSMpeg stream for a camera
+function startJSMpegStream(cameraId) {
+  return new Promise((resolve, reject) => {
+    db.get('SELECT * FROM cameras WHERE id = ?', [cameraId], (err, camera) => {
+      if (err || !camera) {
+        reject(new Error('Camera not found'));
+        return;
+      }
+
+      console.log(`Starting JSMpeg stream for camera ${cameraId}`);
+
+      const ffmpegArgs = [
+        '-i', camera.url,
+        '-f', 'mpegts',
+        '-codec:v', 'mpeg1video',
+        '-codec:a', 'mp2',
+        '-b:v', '1000k',
+        '-bf', '0',
+        '-muxdelay', '0.001',
+        '-fflags', 'nobuffer',
+        '-flags', 'low_delay',
+        '-strict', '-1',
+        '-y',
+        'pipe:1'
+      ];
+
+      const ffmpeg = spawn('ffmpeg', ffmpegArgs);
+      jsmpegStreams.set(cameraId, ffmpeg);
+
+      ffmpeg.stdout.on('data', (data) => {
+        broadcastJSMpeg(cameraId, data);
+      });
+
+      ffmpeg.stderr.on('data', (data) => {
+        console.log(`JSMpeg FFmpeg stderr: ${data}`);
+      });
+
+      ffmpeg.on('spawn', () => {
+        console.log(`JSMpeg stream started for camera ${cameraId}`);
+        resolve(true);
+      });
+
+      ffmpeg.on('error', (error) => {
+        console.error(`JSMpeg stream error for camera ${cameraId}:`, error);
+        jsmpegStreams.delete(cameraId);
+        reject(error);
+      });
+
+      ffmpeg.on('exit', (code, signal) => {
+        console.log(`JSMpeg stream ended for camera ${cameraId} (code: ${code}, signal: ${signal})`);
+        jsmpegStreams.delete(cameraId);
+      });
+    });
+  });
+}
+
+// Stop JSMpeg stream for a camera
+function stopJSMpegStream(cameraId) {
+  const stream = jsmpegStreams.get(cameraId);
+  if (stream) {
+    console.log(`Stopping JSMpeg stream for camera ${cameraId}`);
+    stream.kill('SIGTERM');
+    jsmpegStreams.delete(cameraId);
+  }
 }
 
 // Initialize SIP routes
@@ -349,11 +476,61 @@ app.get('/api/streams/:cameraId/status', (req, res) => {
   });
 });
 
+// Enhanced stream control with JSMpeg support
+app.post('/api/streams/:cameraId/jsmpeg/start', (req, res) => {
+  const cameraId = parseInt(req.params.cameraId);
+  
+  startJSMpegStream(cameraId)
+    .then(() => {
+      res.json({ 
+        status: 'started', 
+        cameraId,
+        streamType: 'jsmpeg',
+        wsUrl: `/jsmpeg/${cameraId}`
+      });
+    })
+    .catch(error => {
+      res.status(500).json({ 
+        error: error.message,
+        cameraId,
+        streamType: 'jsmpeg'
+      });
+    });
+});
+
+app.post('/api/streams/:cameraId/jsmpeg/stop', (req, res) => {
+  const cameraId = parseInt(req.params.cameraId);
+  
+  stopJSMpegStream(cameraId);
+  
+  res.json({ 
+    status: 'stopped', 
+    cameraId,
+    streamType: 'jsmpeg'
+  });
+});
+
+// Get JSMpeg stream status
+app.get('/api/streams/:cameraId/jsmpeg/status', (req, res) => {
+  const cameraId = parseInt(req.params.cameraId);
+  const isActive = jsmpegStreams.has(cameraId);
+  const clientCount = jsmpegClients.get(cameraId)?.size || 0;
+  
+  res.json({
+    cameraId,
+    streamType: 'jsmpeg',
+    status: isActive ? 'running' : 'stopped',
+    clientCount,
+    wsUrl: `/jsmpeg/${cameraId}`
+  });
+});
+
 const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
   console.log(`Jericho Security Backend Server running on port ${PORT}`);
   console.log(`WebSocket server ready for connections`);
+  console.log(`JSMpeg WebSocket server ready on /jsmpeg/:cameraId`);
   console.log(`SIP/VoIP API available at /api/sip`);
 });
 
