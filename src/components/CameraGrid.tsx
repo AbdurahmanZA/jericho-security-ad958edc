@@ -7,8 +7,6 @@ import Hls from 'hls.js';
 import { useCameraState } from '@/hooks/useCameraState';
 import { useCameraHLS } from '@/hooks/useCameraHLS';
 import { CameraTile } from './CameraTile';
-import { SaveLayoutButton } from './SaveLayoutButton';
-import { ComprehensiveCameraSetup } from './ComprehensiveCameraSetup';
 import { UniversalVideoPlayer } from './UniversalVideoPlayer';
 import { config } from '@/config/environment';
 
@@ -18,8 +16,11 @@ interface CameraGridProps {
   onSnapshot: (cameraId: number) => void;
   currentPage?: number;
   onLog?: (msg: string) => void;
-  onShowCameraSetup?: () => void;
-  showCameraSetupButton?: boolean;
+  cameraUrls: Record<number, string>;
+  cameraNames: Record<number, string>;
+  onCameraUrlsChange: (urls: Record<number, string>) => void;
+  onCameraNamesChange: (names: Record<number, string>) => void;
+  useUniversalPlayer: boolean;
 }
 
 export const CameraGrid: React.FC<CameraGridProps> = ({ 
@@ -28,18 +29,17 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
   onSnapshot, 
   currentPage = 1, 
   onLog,
-  onShowCameraSetup,
-  showCameraSetupButton = false
+  cameraUrls,
+  cameraNames,
+  onCameraUrlsChange,
+  onCameraNamesChange,
+  useUniversalPlayer
 }) => {
-  const [cameraUrls, setCameraUrls] = useState<Record<number, string>>({});
-  const [cameraNames, setCameraNames] = useState<Record<number, string>>({});
   const [activeStreams, setActiveStreams] = useState<Record<number, boolean>>({});
   const [editingCamera, setEditingCamera] = useState<number | null>(null);
   const [editingName, setEditingName] = useState<number | null>(null);
   const [tempUrl, setTempUrl] = useState('');
   const [tempName, setTempName] = useState('');
-  const [showCameraSetup, setShowCameraSetup] = useState(false);
-  const [useUniversalPlayer, setUseUniversalPlayer] = useState(true);
   const { toast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
   const retryTimeoutsRef = useRef<Record<number, NodeJS.Timeout>>({});
@@ -73,10 +73,10 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
     const savedUrls = localStorage.getItem('jericho-camera-urls');
     const savedNames = localStorage.getItem('jericho-camera-names');
     if (savedUrls) {
-      setCameraUrls(JSON.parse(savedUrls));
+      onCameraUrlsChange(JSON.parse(savedUrls));
     }
     if (savedNames) {
-      setCameraNames(JSON.parse(savedNames));
+      onCameraNamesChange(JSON.parse(savedNames));
     }
   }, []);
 
@@ -172,7 +172,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
         cleanupHLSPlayer(parseInt(cameraId), onLog);
       });
     };
-  }, []);
+  }, [cameraUrls, cameraStates, initializeCameraState, updateCameraState, cleanupHLSPlayer, hlsInstancesRef, onLog]);
 
   const getGridClasses = () => {
     const baseClasses = 'h-full';
@@ -207,7 +207,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
         throw new Error('URL must start with rtsp://, http://, or https://');
       }
 
-      setCameraUrls(prev => ({ ...prev, [cameraId]: url }));
+      onCameraUrlsChange(prev => ({ ...prev, [cameraId]: url }));
       setEditingCamera(null);
       setTempUrl('');
       
@@ -314,7 +314,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
 
   const handleNameSubmit = (cameraId: number) => {
     if (tempName.trim()) {
-      setCameraNames(prev => ({ ...prev, [cameraId]: tempName.trim() }));
+      onCameraNamesChange(prev => ({ ...prev, [cameraId]: tempName.trim() }));
       toast({
         title: "Camera Renamed",
         description: `Camera ${cameraId} renamed to "${tempName.trim()}"`,
@@ -322,26 +322,6 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
     }
     setEditingName(null);
     setTempName('');
-  };
-
-  const handleAddCameras = (cameras: Array<{ id: number; name: string; url: string; }>) => {
-    const newUrls = { ...cameraUrls };
-    const newNames = { ...cameraNames };
-    const newActiveStreams = { ...activeStreams };
-    
-    cameras.forEach(camera => {
-      newUrls[camera.id] = camera.url;
-      newNames[camera.id] = camera.name;
-      newActiveStreams[camera.id] = true;
-    });
-    
-    setCameraUrls(newUrls);
-    setCameraNames(newNames);
-    setActiveStreams(newActiveStreams);
-    
-    if (onLog) {
-      onLog(`Added ${cameras.length} cameras from comprehensive setup`);
-    }
   };
 
   const toggleStream = (cameraId: number) => {
@@ -547,86 +527,22 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
   // Check if grid is empty (no cameras configured)
   const hasAnyCameras = Object.keys(cameraUrls).length > 0;
 
-  const handleCameraSetupOpen = () => {
-    if (onShowCameraSetup) {
-      onShowCameraSetup();
-    } else {
-      setShowCameraSetup(true);
-    }
-  };
-
   return (
-    <div className="h-full flex flex-col">
-      {/* Control Bar */}
-      <div className="flex items-center justify-between p-4 bg-gray-900/50 border-b border-gray-700">
-        <div className="flex items-center space-x-4">
-          <h2 className="text-lg font-semibold text-white">Camera Display</h2>
-          <span className="text-sm text-gray-400">
-            Page {currentPage} • {layout} cameras
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setUseUniversalPlayer(!useUniversalPlayer)}
-            className={useUniversalPlayer ? "bg-green-600 text-white" : ""}
-          >
-            {useUniversalPlayer ? 'Universal Player' : 'Legacy Player'}
-          </Button>
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowCameraSetup(true)}
-            className="bg-blue-600 text-white border-blue-600 hover:bg-blue-700"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Cameras
-          </Button>
-          
-          <SaveLayoutButton
-            layout={layout}
-            currentPage={currentPage}
-            cameraUrls={cameraUrls}
-            cameraNames={cameraNames}
-          />
-        </div>
-      </div>
-
-      {/* Camera Grid */}
-      <div className="flex-1">
-        {!hasAnyCameras ? (
-          <div className="h-full flex items-center justify-center bg-gray-800/30">
-            <div className="text-center space-y-4">
-              <Camera className="w-16 h-16 mx-auto text-gray-500" />
-              <div>
-                <h3 className="text-xl font-semibold text-white mb-2">Welcome to Jericho Security</h3>
-                <p className="text-gray-400 mb-4">Your camera display is ready. Add cameras to get started.</p>
-                <Button
-                  onClick={handleCameraSetupOpen}
-                  className="bg-blue-600 text-white hover:bg-blue-700"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Your First Camera
-                </Button>
-              </div>
+    <div className="h-full">
+      {!hasAnyCameras ? (
+        <div className="h-full flex items-center justify-center bg-gray-800/30">
+          <div className="text-center space-y-4">
+            <Camera className="w-16 h-16 mx-auto text-gray-500" />
+            <div>
+              <h3 className="text-xl font-semibold text-white mb-2">Welcome to Jericho Security</h3>
+              <p className="text-gray-400 mb-4">Your camera display is ready. Add cameras to get started.</p>
             </div>
           </div>
-        ) : (
-          <div className={getGridClasses()}>
-            {Array.from({ length: camerasToShow }, (_, i) => renderCamera(startCameraId + i))}
-          </div>
-        )}
-      </div>
-
-      {!onShowCameraSetup && (
-        <ComprehensiveCameraSetup
-          open={showCameraSetup}
-          onClose={() => setShowCameraSetup(false)}
-          onAddCameras={handleAddCameras}
-          existingCameras={cameraUrls}
-        />
+        </div>
+      ) : (
+        <div className={getGridClasses()}>
+          {Array.from({ length: camerasToShow }, (_, i) => renderCamera(startCameraId + i))}
+        </div>
       )}
     </div>
   );
