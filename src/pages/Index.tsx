@@ -54,6 +54,8 @@ const Index = () => {
   const { toast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
   const backendWsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+  const isConnectingRef = useRef(false);
 
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -85,65 +87,93 @@ const Index = () => {
     }));
   }, [layout]);
 
-  // Backend monitoring WebSocket with dynamic URL
+  // Backend monitoring WebSocket with improved connection management
   useEffect(() => {
-    let reconnectTimeout: NodeJS.Timeout;
-    
     const connectBackendMonitoring = () => {
+      // Prevent multiple simultaneous connection attempts
+      if (isConnectingRef.current || (backendWsRef.current && backendWsRef.current.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+
+      // Clean up existing connection
+      if (backendWsRef.current) {
+        backendWsRef.current.close();
+        backendWsRef.current = null;
+      }
+
+      isConnectingRef.current = true;
       const wsUrl = config.backend.wsUrl;
       addBackendLog(`Attempting WebSocket connection to ${wsUrl}`);
       
-      const ws = new WebSocket(wsUrl);
-      backendWsRef.current = ws;
+      try {
+        const ws = new WebSocket(wsUrl);
+        backendWsRef.current = ws;
 
-      ws.onopen = () => {
-        addBackendLog(`Connected to backend via ${wsUrl}`);
-        setBackendStatus(prev => ({ ...prev, isConnected: true, lastHeartbeat: new Date() }));
-        
-        if (reconnectTimeout) {
-          clearTimeout(reconnectTimeout);
-        }
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
+        ws.onopen = () => {
+          isConnectingRef.current = false;
+          addBackendLog(`Connected to backend via ${wsUrl}`);
+          setBackendStatus(prev => ({ ...prev, isConnected: true, lastHeartbeat: new Date() }));
           
-          if (data.type === 'log') {
-            addBackendLog(data.message);
-          } else if (data.type === 'status' || data.type === 'connection_status') {
-            setBackendStatus(prev => ({
-              ...prev,
-              activeStreams: data.activeStreams || prev.activeStreams,
-              lastHeartbeat: new Date()
-            }));
-            addBackendLog(`System status updated - Active streams: ${data.activeStreams || 0}`);
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = undefined;
           }
-        } catch (error) {
-          // Ignore parse errors
-        }
-      };
+        };
 
-      ws.onclose = () => {
-        addBackendLog("Backend monitoring disconnected");
-        setBackendStatus(prev => ({ ...prev, isConnected: false }));
-        
-        reconnectTimeout = setTimeout(connectBackendMonitoring, 5000);
-      };
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === 'log') {
+              addBackendLog(data.message);
+            } else if (data.type === 'status' || data.type === 'connection_status') {
+              setBackendStatus(prev => ({
+                ...prev,
+                activeStreams: data.activeStreams || prev.activeStreams,
+                lastHeartbeat: new Date()
+              }));
+              addBackendLog(`System status updated - Active streams: ${data.activeStreams || 0}`);
+            }
+          } catch (error) {
+            // Ignore parse errors
+          }
+        };
 
-      ws.onerror = () => {
-        addBackendLog(`WebSocket connection failed to ${wsUrl}`);
-      };
+        ws.onclose = (event) => {
+          isConnectingRef.current = false;
+          addBackendLog(`Backend monitoring disconnected (code: ${event.code})`);
+          setBackendStatus(prev => ({ ...prev, isConnected: false }));
+          
+          // Only reconnect if not manually closed
+          if (event.code !== 1000 && !reconnectTimeoutRef.current) {
+            reconnectTimeoutRef.current = setTimeout(() => {
+              reconnectTimeoutRef.current = undefined;
+              connectBackendMonitoring();
+            }, 5000);
+          }
+        };
+
+        ws.onerror = (error) => {
+          isConnectingRef.current = false;
+          addBackendLog(`WebSocket connection failed to ${wsUrl} - backend server may not be running`);
+        };
+      } catch (error) {
+        isConnectingRef.current = false;
+        addBackendLog(`Failed to create WebSocket connection: ${error.message}`);
+      }
     };
 
     connectBackendMonitoring();
 
     return () => {
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
+      isConnectingRef.current = false;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = undefined;
       }
       if (backendWsRef.current) {
         backendWsRef.current.close();
+        backendWsRef.current = null;
       }
     };
   }, []);

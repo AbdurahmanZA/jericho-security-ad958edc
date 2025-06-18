@@ -2,7 +2,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { VideoPlayer } from './VideoPlayer';
 import { JSMpegPlayer } from './JSMpegPlayer';
-import { RTSPStreamManager, StreamStatus } from '@/services/RTSPStreamManager';
 
 interface UniversalVideoPlayerProps {
   cameraId: number;
@@ -24,106 +23,100 @@ export const UniversalVideoPlayer: React.FC<UniversalVideoPlayerProps> = ({
   className = "w-full h-full"
 }) => {
   const [currentStreamType, setCurrentStreamType] = useState<StreamType>('none');
-  const [streamStatus, setStreamStatus] = useState<StreamStatus | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
-  const streamManagerRef = useRef<RTSPStreamManager | null>(null);
+  const [connectionAttempt, setConnectionAttempt] = useState(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+  const isInitializedRef = useRef(false);
 
   const logMessage = useCallback((msg: string) => {
     onLog?.(msg);
     console.log(`[UniversalPlayer Camera ${cameraId}] ${msg}`);
   }, [cameraId, onLog]);
 
-  // Initialize stream manager
-  useEffect(() => {
-    const handleStatusUpdate = (status: StreamStatus) => {
-      if (status.cameraId === cameraId) {
-        setStreamStatus(status);
-        setCurrentStreamType(status.streamType);
-        setIsConnecting(false);
-        logMessage(`Stream status updated: ${status.streamType} (active: ${status.isActive})`);
-      }
-    };
-
-    streamManagerRef.current = new RTSPStreamManager(handleStatusUpdate, logMessage);
-    logMessage('Stream manager initialized');
-
-    return () => {
-      if (streamManagerRef.current) {
-        streamManagerRef.current.destroy();
-        logMessage('Stream manager destroyed');
-      }
-    };
-  }, [cameraId, logMessage]);
-
-  // Configure stream when URL is available
-  useEffect(() => {
-    if (streamManagerRef.current && rtspUrl) {
-      streamManagerRef.current.addStream({
-        cameraId,
-        rtspUrl,
-        name,
-        type: 'jsmpeg',
-        quality: 'medium',
-        priority: 1
-      });
-      logMessage(`Stream configured with URL: ${rtspUrl}`);
+  // Cleanup function
+  const cleanup = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = undefined;
     }
-  }, [cameraId, rtspUrl, name, logMessage]);
+    setCurrentStreamType('none');
+    setIsConnecting(false);
+    setConnectionAttempt(0);
+  }, []);
+
+  // Stream connection logic
+  const attemptConnection = useCallback(async () => {
+    if (!isActive || !rtspUrl || isConnecting) {
+      return;
+    }
+
+    setIsConnecting(true);
+    const attempt = connectionAttempt + 1;
+    setConnectionAttempt(attempt);
+    
+    logMessage(`Attempting connection (attempt ${attempt})`);
+
+    // Try JSMpeg first for ultra-low latency
+    try {
+      setCurrentStreamType('jsmpeg');
+      logMessage('Attempting JSMpeg stream...');
+      // JSMpegPlayer will handle its own connection logic
+      setIsConnecting(false);
+    } catch (error) {
+      logMessage(`JSMpeg failed: ${error.message}`);
+      // Fall back to VideoPlayer (WebRTC/HLS)
+      setCurrentStreamType('webrtc');
+      setIsConnecting(false);
+    }
+  }, [isActive, rtspUrl, isConnecting, connectionAttempt, logMessage]);
 
   // Handle active state changes
   useEffect(() => {
-    if (!streamManagerRef.current) return;
-
-    if (isActive && rtspUrl) {
-      setIsConnecting(true);
-      logMessage('Starting universal stream...');
-      
-      streamManagerRef.current.startStream(cameraId).then(success => {
-        if (!success) {
-          setIsConnecting(false);
-          setCurrentStreamType('none');
-          logMessage('All stream types failed to start - falling back to VideoPlayer');
-        }
-      });
-    } else {
-      streamManagerRef.current.stopStream(cameraId);
-      setCurrentStreamType('none');
-      setIsConnecting(false);
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      logMessage('Stream stopped');
+    if (!isActive || !rtspUrl) {
+      cleanup();
+      return;
     }
-  }, [isActive, rtspUrl, cameraId, logMessage]);
+
+    // Only initialize once per URL change
+    if (!isInitializedRef.current) {
+      isInitializedRef.current = true;
+      logMessage(`Stream configured with URL: ${rtspUrl}`);
+      attemptConnection();
+    }
+
+    return () => {
+      isInitializedRef.current = false;
+    };
+  }, [isActive, rtspUrl, attemptConnection, cleanup, logMessage]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return cleanup;
+  }, [cleanup]);
 
   // Handle JSMpeg player events
   const handleJSMpegConnected = useCallback(() => {
     logMessage('JSMpeg stream connected successfully');
     setIsConnecting(false);
     setCurrentStreamType('jsmpeg');
+    setConnectionAttempt(0);
   }, [logMessage]);
 
   const handleJSMpegDisconnected = useCallback(() => {
     logMessage('JSMpeg stream disconnected');
-    setCurrentStreamType('none');
-    if (isActive && streamManagerRef.current) {
-      logMessage('Attempting to reconnect...');
-      reconnectTimeoutRef.current = setTimeout(() => {
-        setIsConnecting(true);
-        streamManagerRef.current?.startStream(cameraId);
-      }, 3000);
+    if (isActive && rtspUrl) {
+      logMessage('Falling back to WebRTC/HLS...');
+      setCurrentStreamType('webrtc');
+    } else {
+      setCurrentStreamType('none');
     }
-  }, [isActive, cameraId, logMessage]);
+  }, [isActive, rtspUrl, logMessage]);
 
   const handleJSMpegError = useCallback((error: string) => {
     logMessage(`JSMpeg error: ${error}`);
-    setCurrentStreamType('none');
-    if (streamManagerRef.current) {
-      logMessage('Falling back to alternative stream types...');
-      streamManagerRef.current.startStream(cameraId);
-    }
-  }, [cameraId, logMessage]);
+    setCurrentStreamType('webrtc');
+    setIsConnecting(false);
+  }, [logMessage]);
 
   // Get stream indicator info
   const getStreamIndicator = () => {
@@ -145,18 +138,7 @@ export const UniversalVideoPlayer: React.FC<UniversalVideoPlayerProps> = ({
   const indicator = getStreamIndicator();
 
   const renderPlayer = () => {
-    if (!isActive || currentStreamType === 'none') {
-      // Always fall back to VideoPlayer for WebRTC/HLS when JSMpeg is not available
-      if (isActive && rtspUrl) {
-        return (
-          <VideoPlayer
-            cameraId={cameraId}
-            isActive={isActive}
-            onLog={onLog}
-          />
-        );
-      }
-      
+    if (!isActive || !rtspUrl) {
       return (
         <div className="w-full h-full bg-gray-800 flex items-center justify-center">
           <div className="text-center">
@@ -204,9 +186,9 @@ export const UniversalVideoPlayer: React.FC<UniversalVideoPlayerProps> = ({
       {/* Enhanced stream indicator */}
       <div className="absolute top-2 right-2 px-2 py-1 bg-black bg-opacity-70 rounded text-xs">
         <span className={indicator.color}>{indicator.text}</span>
-        {streamStatus && streamStatus.reconnectAttempts > 0 && (
+        {connectionAttempt > 1 && (
           <div className="text-xs text-gray-400 mt-1">
-            Retry: {streamStatus.reconnectAttempts}
+            Attempt: {connectionAttempt}
           </div>
         )}
       </div>
