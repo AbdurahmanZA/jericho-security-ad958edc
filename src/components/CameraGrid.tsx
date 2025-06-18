@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,32 +40,173 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
   const [editingName, setEditingName] = useState<number | null>(null);
   const [tempUrl, setTempUrl] = useState('');
   const [tempName, setTempName] = useState('');
+  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const { toast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
   const retryTimeoutsRef = useRef<Record<number, NodeJS.Timeout>>({});
   const videoRefs = useRef<Record<number, HTMLVideoElement | null>>({});
+  const connectionRetryCount = useRef(0);
+  const lastConnectionAttempt = useRef(0);
 
   const MAX_RETRIES = 3;
   const RETRY_DELAY = 10000;
+  const MAX_CONNECTION_RETRIES = 5;
+  const CONNECTION_RETRY_DELAY = 5000;
 
   const { cameraStates, updateCameraState, initializeCameraState } = useCameraState();
   const { setupHLSPlayer, cleanupHLSPlayer, hlsInstancesRef } = useCameraHLS();
 
-  const checkHLSAvailability = async (cameraId: number) => {
+  // Improved WebSocket connection with rate limiting
+  const connectWebSocket = () => {
+    const now = Date.now();
+    const timeSinceLastAttempt = now - lastConnectionAttempt.current;
+    
+    // Rate limiting: don't attempt connection too frequently
+    if (timeSinceLastAttempt < CONNECTION_RETRY_DELAY && connectionRetryCount.current > 0) {
+      onLog?.(`Rate limiting WebSocket connection attempt. Wait ${Math.ceil((CONNECTION_RETRY_DELAY - timeSinceLastAttempt) / 1000)}s`);
+      return;
+    }
+
+    if (connectionRetryCount.current >= MAX_CONNECTION_RETRIES) {
+      onLog?.(`Max WebSocket connection attempts reached (${MAX_CONNECTION_RETRIES}). Please check backend service.`);
+      setConnectionState('failed');
+      return;
+    }
+
+    // Close existing connection
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
+    setConnectionState('connecting');
+    lastConnectionAttempt.current = now;
+    connectionRetryCount.current++;
+
+    const wsUrl = config.backend.wsUrl;
+    onLog?.(`Attempting WebSocket connection ${connectionRetryCount.current}/${MAX_CONNECTION_RETRIES} to ${wsUrl}`);
+
     try {
-      const response = await fetch(`/hls/camera_${cameraId}.m3u8`, { method: 'HEAD' });
-      const isAvailable = response.ok;
-      updateCameraState(cameraId, { hlsAvailable: isAvailable });
-      if (onLog) {
-        onLog(`HLS file for Camera ${cameraId}: ${isAvailable ? 'Available' : 'Not found'}`);
+      const ws = new WebSocket(wsUrl);
+      
+      // Connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+          onLog?.(`WebSocket connection timeout after 10s`);
+          setConnectionState('failed');
+          scheduleReconnection();
+        }
+      }, 10000);
+
+      ws.onopen = () => {
+        clearTimeout(connectionTimeout);
+        onLog?.(`WebSocket connected successfully to ${wsUrl}`);
+        setConnectionState('connected');
+        connectionRetryCount.current = 0; // Reset retry count on successful connection
+        wsRef.current = ws;
+      };
+
+      ws.onclose = (event) => {
+        clearTimeout(connectionTimeout);
+        onLog?.(`WebSocket disconnected (code: ${event.code}, reason: ${event.reason})`);
+        setConnectionState('disconnected');
+        wsRef.current = null;
+        
+        // Only attempt reconnection if not manually closed
+        if (event.code !== 1000 && connectionRetryCount.current < MAX_CONNECTION_RETRIES) {
+          scheduleReconnection();
+        }
+      };
+
+      ws.onerror = (error) => {
+        clearTimeout(connectionTimeout);
+        onLog?.(`WebSocket error: ${error.type} - backend server may not be running`);
+        setConnectionState('failed');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          handleWebSocketMessage(data);
+        } catch (error) {
+          // Ignore JSON parse errors for non-JSON messages
+        }
+      };
+
+    } catch (error: any) {
+      onLog?.(`WebSocket connection failed: ${error.message}`);
+      setConnectionState('failed');
+      scheduleReconnection();
+    }
+  };
+
+  const scheduleReconnection = () => {
+    if (connectionRetryCount.current < MAX_CONNECTION_RETRIES) {
+      const delay = CONNECTION_RETRY_DELAY * Math.pow(2, connectionRetryCount.current - 1); // Exponential backoff
+      onLog?.(`Scheduling WebSocket reconnection in ${delay / 1000}s (attempt ${connectionRetryCount.current + 1}/${MAX_CONNECTION_RETRIES})`);
+      
+      setTimeout(() => {
+        if (connectionState !== 'connected') {
+          connectWebSocket();
+        }
+      }, delay);
+    }
+  };
+
+  const handleWebSocketMessage = (data: any) => {
+    if (data.type === "stream_status" && typeof data.cameraId !== "undefined") {
+      const isStarted = data.status === "started";
+      setActiveStreams((prev) => ({
+        ...prev,
+        [data.cameraId]: isStarted
+      }));
+      
+      if (isStarted) {
+        updateCameraState(data.cameraId, {
+          connectionStatus: 'connected',
+          retryCount: 0,
+          lastError: ''
+        });
+        onLog?.(`Camera ${data.cameraId} stream started successfully`);
+        setTimeout(() => checkHLSAvailability(data.cameraId), 3000);
+      } else {
+        updateCameraState(data.cameraId, {
+          connectionStatus: 'idle',
+          hlsAvailable: false
+        });
+        onLog?.(`Camera ${data.cameraId} stream stopped`);
       }
-      return isAvailable;
-    } catch (error) {
-      updateCameraState(cameraId, { hlsAvailable: false });
-      if (onLog) {
-        onLog(`HLS check failed for Camera ${cameraId}: ${error.message}`);
+    }
+    
+    if (data.type === "stream_error" && typeof data.cameraId !== "undefined") {
+      const cameraState = cameraStates[data.cameraId] || initializeCameraState(data.cameraId);
+      
+      setActiveStreams((prev) => ({
+        ...prev,
+        [data.cameraId]: false
+      }));
+      
+      updateCameraState(data.cameraId, {
+        connectionStatus: 'failed',
+        lastError: data.error,
+        retryCount: cameraState.retryCount + 1,
+        hlsAvailable: false
+      });
+      
+      onLog?.(`Camera ${data.cameraId} stream error: ${data.error} (attempt ${cameraState.retryCount + 1}/${MAX_RETRIES})`);
+      
+      if (cameraState.retryCount < MAX_RETRIES) {
+        const url = cameraUrls[data.cameraId];
+        if (url) {
+          onLog?.(`Will retry Camera ${data.cameraId} in ${RETRY_DELAY/1000} seconds`);
+          retryTimeoutsRef.current[data.cameraId] = setTimeout(() => {
+            startStream(data.cameraId, url);
+          }, RETRY_DELAY);
+        }
+      } else {
+        onLog?.(`Camera ${data.cameraId} exceeded max retries (${MAX_RETRIES}). Manual restart required.`);
       }
-      return false;
     }
   };
 
@@ -101,104 +241,21 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
     localStorage.setItem('jericho-camera-names', JSON.stringify(cameraNames));
   }, [cameraNames]);
 
+  // Initialize WebSocket connection
   useEffect(() => {
-    let ws: WebSocket;
-    let reconnectTimeout: NodeJS.Timeout;
-
-    function connectWebSocket() {
-      const wsUrl = config.backend.wsUrl;
-
-      ws = new WebSocket(wsUrl);
-      
-      ws.onopen = () => {
-        if (onLog) onLog(`WebSocket connected to backend at ${wsUrl}`);
-        clearTimeout(reconnectTimeout);
-      };
-
-      ws.onclose = () => {
-        if (onLog) onLog("WebSocket disconnected from backend");
-        reconnectTimeout = setTimeout(connectWebSocket, 5000);
-      };
-
-      ws.onerror = (e) => {
-        if (onLog) onLog(`WebSocket connection error to ${wsUrl} - backend server may not be running`);
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === "stream_status" && typeof data.cameraId !== "undefined") {
-            const isStarted = data.status === "started";
-            setActiveStreams((prev) => ({
-              ...prev,
-              [data.cameraId]: isStarted
-            }));
-            
-            if (isStarted) {
-              updateCameraState(data.cameraId, {
-                connectionStatus: 'connected',
-                retryCount: 0,
-                lastError: ''
-              });
-              if (onLog) onLog(`Camera ${data.cameraId} stream started successfully`);
-              setTimeout(() => checkHLSAvailability(data.cameraId), 3000);
-            } else {
-              updateCameraState(data.cameraId, {
-                connectionStatus: 'idle',
-                hlsAvailable: false
-              });
-              if (onLog) onLog(`Camera ${data.cameraId} stream stopped`);
-            }
-          }
-          
-          if (data.type === "stream_error" && typeof data.cameraId !== "undefined") {
-            const cameraState = cameraStates[data.cameraId] || initializeCameraState(data.cameraId);
-            
-            setActiveStreams((prev) => ({
-              ...prev,
-              [data.cameraId]: false
-            }));
-            
-            updateCameraState(data.cameraId, {
-              connectionStatus: 'failed',
-              lastError: data.error,
-              retryCount: cameraState.retryCount + 1,
-              hlsAvailable: false
-            });
-            
-            if (onLog) onLog(`Camera ${data.cameraId} stream error: ${data.error} (attempt ${cameraState.retryCount + 1}/${MAX_RETRIES})`);
-            
-            if (cameraState.retryCount < MAX_RETRIES) {
-              const url = cameraUrls[data.cameraId];
-              if (url) {
-                if (onLog) onLog(`Will retry Camera ${data.cameraId} in ${RETRY_DELAY/1000} seconds`);
-                retryTimeoutsRef.current[data.cameraId] = setTimeout(() => {
-                  startStream(data.cameraId, url);
-                }, RETRY_DELAY);
-              }
-            } else {
-              if (onLog) onLog(`Camera ${data.cameraId} exceeded max retries (${MAX_RETRIES}). Manual restart required.`);
-            }
-          }
-        } catch (error) {
-          // Ignore JSON parse errors
-        }
-      };
-      
-      wsRef.current = ws;
-    }
-
     connectWebSocket();
 
     return () => { 
-      clearTimeout(reconnectTimeout);
-      if (ws) ws.close();
       Object.values(retryTimeoutsRef.current).forEach(timeout => clearTimeout(timeout));
       Object.keys(hlsInstancesRef.current).forEach(cameraId => {
         cleanupHLSPlayer(parseInt(cameraId), onLog);
       });
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
-  }, [cameraUrls, cameraStates, initializeCameraState, updateCameraState, cleanupHLSPlayer, hlsInstancesRef, onLog]);
+  }, []);
 
   const getGridClasses = () => {
     const baseClasses = 'h-full';
@@ -233,7 +290,6 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
         throw new Error('URL must start with rtsp://, http://, or https://');
       }
 
-      // Update camera URLs
       onCameraUrlsChange({ ...cameraUrls, [cameraId]: url });
       setEditingCamera(null);
       setTempUrl('');
@@ -242,14 +298,12 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
         onLog(`Camera ${cameraId} configured with URL: ${url}`);
       }
       
-      // Show success toast with auto-dismiss
       toast({
         title: "Camera URL Updated",
         description: `Camera ${cameraId} configured successfully`,
-        duration: 3000, // Auto-dismiss after 3 seconds
+        duration: 3000,
       });
 
-      // Automatically start the stream after a short delay
       setTimeout(() => {
         startStream(cameraId, url);
       }, 1000);
@@ -268,7 +322,12 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
     const cameraState = cameraStates[cameraId] || initializeCameraState(cameraId);
     
     if (cameraState.retryCount >= MAX_RETRIES) {
-      if (onLog) onLog(`Camera ${cameraId} has exceeded max retries. Reset required.`);
+      onLog?.(`Camera ${cameraId} has exceeded max retries. Reset required.`);
+      return;
+    }
+
+    if (connectionState !== 'connected') {
+      onLog?.(`Cannot start Camera ${cameraId} - WebSocket not connected (${connectionState})`);
       return;
     }
 
@@ -285,13 +344,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
         rtspUrl: url,
       }));
       
-      if (onLog) onLog(`Attempting to start Camera ${cameraId} stream (attempt ${cameraState.retryCount + 1}/${MAX_RETRIES})`);
-    } else {
-      updateCameraState(cameraId, {
-        connectionStatus: 'failed',
-        lastError: 'Backend WebSocket not connected'
-      });
-      if (onLog) onLog(`Cannot start Camera ${cameraId} - backend WebSocket not connected`);
+      onLog?.(`Attempting to start Camera ${cameraId} stream (attempt ${cameraState.retryCount + 1}/${MAX_RETRIES})`);
     }
   };
 
@@ -316,7 +369,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
         cameraId,
       }));
       setActiveStreams(prev => ({ ...prev, [cameraId]: false }));
-      if (onLog) onLog(`Stopped Camera ${cameraId} stream`);
+      onLog?.(`Stopped Camera ${cameraId} stream`);
     }
   };
 
@@ -337,7 +390,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
 
     setActiveStreams(prev => ({ ...prev, [cameraId]: false }));
     
-    if (onLog) onLog(`Reset Camera ${cameraId} - ready for manual restart`);
+    onLog?.(`Reset Camera ${cameraId} - ready for manual restart`);
     
     toast({
       title: "Camera Reset",
@@ -411,7 +464,6 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
             className="w-full h-full"
           />
           
-          {/* Camera controls overlay */}
           <div className="absolute bottom-2 left-2 flex space-x-2">
             <Button
               variant="ghost"
@@ -431,7 +483,6 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
             </Button>
           </div>
 
-          {/* Camera name */}
           <div className="absolute bottom-2 right-2 px-2 py-1 bg-black bg-opacity-70 rounded text-xs text-white">
             {name}
           </div>
@@ -439,7 +490,6 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
       );
     }
 
-    // Fallback to original tile-based approach
     return (
       <div key={cameraId} className="relative bg-gray-800 rounded-lg p-4 flex flex-col items-center justify-center min-h-[200px]">
         {editingCamera === cameraId ? (
@@ -536,6 +586,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
                     size="sm"
                     variant={isActive ? "destructive" : "default"}
                     className="flex-1"
+                    disabled={connectionState !== 'connected'}
                   >
                     {isActive ? <Square className="w-4 h-4 mr-1" /> : <Play className="w-4 h-4 mr-1" />}
                     {isActive ? 'Stop' : 'Start'}
@@ -578,6 +629,35 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
 
   return (
     <div className="h-full">
+      {/* Connection status indicator */}
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <div className={`w-2 h-2 rounded-full ${
+            connectionState === 'connected' ? 'bg-green-500' : 
+            connectionState === 'connecting' ? 'bg-yellow-500 animate-pulse' : 
+            connectionState === 'failed' ? 'bg-red-500' :
+            'bg-gray-500'
+          }`} />
+          <span className="text-xs text-gray-400">
+            Backend: {connectionState} 
+            {connectionRetryCount.current > 0 && ` (${connectionRetryCount.current}/${MAX_CONNECTION_RETRIES})`}
+          </span>
+        </div>
+        {connectionState === 'failed' && connectionRetryCount.current >= MAX_CONNECTION_RETRIES && (
+          <Button
+            onClick={() => {
+              connectionRetryCount.current = 0;
+              connectWebSocket();
+            }}
+            size="sm"
+            variant="outline"
+            className="text-xs"
+          >
+            Reconnect
+          </Button>
+        )}
+      </div>
+
       {!hasAnyCameras ? (
         <div className="h-full flex items-center justify-center bg-gray-800/30">
           <div className="text-center space-y-4">
