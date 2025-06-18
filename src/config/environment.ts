@@ -40,15 +40,16 @@ const baseConfig = {
   },
 };
 
-// Auto-detect protocol and construct URLs dynamically
+// Auto-detect protocol and construct URLs dynamically with proper port handling
 const getBackendUrls = () => {
   const isHttps = window.location.protocol === 'https:';
-  const host = window.location.host || '192.168.0.138';
+  const hostname = window.location.hostname || '192.168.0.138';
+  const backendPort = '3001'; // Backend server runs on port 3001
   
   return {
-    apiUrl: `${window.location.protocol}//${host}/api`,
-    wsUrl: `${isHttps ? 'wss' : 'ws'}://${host}/ws`,
-    webrtcSignalingUrl: `${isHttps ? 'wss' : 'ws'}://${host}/api/ws`,
+    apiUrl: `${window.location.protocol}//${hostname}:${backendPort}/api`,
+    wsUrl: `${isHttps ? 'wss' : 'ws'}://${hostname}:${backendPort}/api/ws`,
+    webrtcSignalingUrl: `${isHttps ? 'wss' : 'ws'}://${hostname}:${backendPort}/api/ws`,
   };
 };
 
@@ -149,3 +150,11 @@ export const getStreamingConfig = () => config.streaming;
 export const getHikvisionConfig = () => config.hikvision;
 export const getBackendConfig = () => config.backend;
 export const getDemoConfig = () => config.demo;
+
+// Helper function to get JSMpeg WebSocket URL with proper port
+export const getJSMpegUrl = (cameraId: number): string => {
+  const hostname = window.location.hostname || '192.168.0.138';
+  const backendPort = '3001';
+  const isHttps = window.location.protocol === 'https:';
+  return `${isHttps ? 'wss' : 'ws'}://${hostname}:${backendPort}/jsmpeg/${cameraId}`;
+};

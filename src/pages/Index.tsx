@@ -56,6 +56,8 @@ const Index = () => {
   const backendWsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
   const isConnectingRef = useRef(false);
+  const connectionAttemptsRef = useRef(0);
+  const lastConnectionAttemptRef = useRef(0);
 
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -87,33 +89,67 @@ const Index = () => {
     }));
   }, [layout]);
 
+  // Exponential backoff for backend connections
+  const getBackoffDelay = (attempt: number) => {
+    return Math.min(5000 * Math.pow(1.5, attempt), 60000); // Cap at 1 minute
+  };
+
   // Backend monitoring WebSocket with improved connection management
   useEffect(() => {
     const connectBackendMonitoring = () => {
+      const now = Date.now();
+      const timeSinceLastAttempt = now - lastConnectionAttemptRef.current;
+      const requiredDelay = getBackoffDelay(connectionAttemptsRef.current);
+
+      // Rate limiting: don't attempt connection too frequently
+      if (timeSinceLastAttempt < requiredDelay) {
+        const remainingDelay = requiredDelay - timeSinceLastAttempt;
+        addBackendLog(`Rate limiting connection attempt, waiting ${Math.round(remainingDelay/1000)}s`);
+        
+        reconnectTimeoutRef.current = setTimeout(() => {
+          connectBackendMonitoring();
+        }, remainingDelay);
+        return;
+      }
+
       // Prevent multiple simultaneous connection attempts
-      if (isConnectingRef.current || (backendWsRef.current && backendWsRef.current.readyState === WebSocket.CONNECTING)) {
+      if (isConnectingRef.current) {
+        addBackendLog('Connection attempt already in progress, skipping');
         return;
       }
 
       // Clean up existing connection
-      if (backendWsRef.current) {
+      if (backendWsRef.current && backendWsRef.current.readyState !== WebSocket.CLOSED) {
         backendWsRef.current.close();
         backendWsRef.current = null;
       }
 
       isConnectingRef.current = true;
+      lastConnectionAttemptRef.current = now;
+      connectionAttemptsRef.current += 1;
+      
       const wsUrl = config.backend.wsUrl;
-      addBackendLog(`Attempting WebSocket connection to ${wsUrl}`);
+      addBackendLog(`Backend connection attempt ${connectionAttemptsRef.current} to ${wsUrl}`);
       
       try {
         const ws = new WebSocket(wsUrl);
         backendWsRef.current = ws;
 
+        const connectionTimeout = setTimeout(() => {
+          if (ws.readyState === WebSocket.CONNECTING) {
+            addBackendLog('Connection timeout, closing WebSocket');
+            ws.close();
+          }
+        }, 10000); // 10 second timeout
+
         ws.onopen = () => {
+          clearTimeout(connectionTimeout);
           isConnectingRef.current = false;
-          addBackendLog(`Connected to backend via ${wsUrl}`);
+          connectionAttemptsRef.current = 0; // Reset on successful connection
+          addBackendLog(`Successfully connected to backend via ${wsUrl}`);
           setBackendStatus(prev => ({ ...prev, isConnected: true, lastHeartbeat: new Date() }));
           
+          // Clear any pending reconnection attempts
           if (reconnectTimeoutRef.current) {
             clearTimeout(reconnectTimeoutRef.current);
             reconnectTimeoutRef.current = undefined;
@@ -135,38 +171,52 @@ const Index = () => {
               addBackendLog(`System status updated - Active streams: ${data.activeStreams || 0}`);
             }
           } catch (error) {
-            // Ignore parse errors
+            // Ignore parse errors for non-JSON messages
           }
         };
 
         ws.onclose = (event) => {
+          clearTimeout(connectionTimeout);
           isConnectingRef.current = false;
-          addBackendLog(`Backend monitoring disconnected (code: ${event.code})`);
+          
+          const wasCleanClose = event.code === 1000;
+          addBackendLog(`Backend monitoring disconnected (code: ${event.code}, clean: ${wasCleanClose})`);
           setBackendStatus(prev => ({ ...prev, isConnected: false }));
           
-          // Only reconnect if not manually closed
-          if (event.code !== 1000 && !reconnectTimeoutRef.current) {
+          // Only reconnect if not manually closed and we haven't exceeded max attempts
+          if (!wasCleanClose && connectionAttemptsRef.current < 10) {
+            const delay = getBackoffDelay(connectionAttemptsRef.current);
+            addBackendLog(`Scheduling reconnection in ${Math.round(delay/1000)} seconds`);
+            
             reconnectTimeoutRef.current = setTimeout(() => {
-              reconnectTimeoutRef.current = undefined;
               connectBackendMonitoring();
-            }, 5000);
+            }, delay);
+          } else if (connectionAttemptsRef.current >= 10) {
+            addBackendLog('Max connection attempts reached, stopping automatic reconnection');
           }
         };
 
         ws.onerror = (error) => {
+          clearTimeout(connectionTimeout);
           isConnectingRef.current = false;
-          addBackendLog(`WebSocket connection failed to ${wsUrl} - backend server may not be running`);
+          addBackendLog(`WebSocket error: Backend server may not be running on ${wsUrl}`);
         };
-      } catch (error) {
+      } catch (error: any) {
         isConnectingRef.current = false;
         addBackendLog(`Failed to create WebSocket connection: ${error.message}`);
       }
     };
 
-    connectBackendMonitoring();
+    // Initial connection with small delay to prevent immediate loops
+    const initialTimeout = setTimeout(() => {
+      connectBackendMonitoring();
+    }, 1000);
 
     return () => {
+      clearTimeout(initialTimeout);
       isConnectingRef.current = false;
+      connectionAttemptsRef.current = 0;
+      
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = undefined;
@@ -176,7 +226,7 @@ const Index = () => {
         backendWsRef.current = null;
       }
     };
-  }, []);
+  }, []); // Empty dependency array to prevent re-running
 
   const handleSnapshot = async (cameraId: number) => {
     try {
