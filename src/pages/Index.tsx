@@ -261,8 +261,8 @@ const Index = () => {
                 <div className="flex items-center space-x-4">
                   {!isFullscreen && <SidebarTrigger className="text-white hover:bg-slate-700" />}
                   <div className="flex items-center space-x-4">
-                    {/* Persistent Logo - 4x larger */}
-                    <div className="w-16 h-16 bg-slate-800 rounded-lg p-3">
+                    {/* Enlarged Logo - increased from w-16 h-16 to w-24 h-24 */}
+                    <div className="w-24 h-24 bg-slate-800 rounded-lg p-3">
                       <img 
                         src="/lovable-uploads/7cca0fa7-2e1b-4160-9134-844eadbfaf2d.png" 
                         alt="Jericho Security Logo" 
