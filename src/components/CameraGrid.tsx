@@ -1,14 +1,14 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Camera, Plus, Settings } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Camera, Play, Square, Image, Edit2, Check, X, AlertTriangle, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import Hls from 'hls.js';
 import { useCameraState } from '@/hooks/useCameraState';
-import { useStreamingPlayer } from '@/hooks/useStreamingPlayer';
+import { useCameraHLS } from '@/hooks/useCameraHLS';
 import { CameraTile } from './CameraTile';
 import { SaveLayoutButton } from './SaveLayoutButton';
 import { ComprehensiveCameraSetup } from './ComprehensiveCameraSetup';
-import { ClearConnectionsButton } from './ClearConnectionsButton';
 
 interface CameraGridProps {
   layout: number;
@@ -18,13 +18,7 @@ interface CameraGridProps {
   onLog?: (msg: string) => void;
 }
 
-export const CameraGrid: React.FC<CameraGridProps> = ({ 
-  layout, 
-  isFullscreen, 
-  onSnapshot, 
-  currentPage = 1, 
-  onLog 
-}) => {
+export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, onSnapshot, currentPage = 1, onLog }) => {
   const [cameraUrls, setCameraUrls] = useState<Record<number, string>>({});
   const [cameraNames, setCameraNames] = useState<Record<number, string>>({});
   const [activeStreams, setActiveStreams] = useState<Record<number, boolean>>({});
@@ -38,20 +32,153 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
   const retryTimeoutsRef = useRef<Record<number, NodeJS.Timeout>>({});
   const videoRefs = useRef<Record<number, HTMLVideoElement | null>>({});
 
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY = 10000;
+
   const { cameraStates, updateCameraState, initializeCameraState } = useCameraState();
-  const { setupPlayer, cleanupPlayer, hlsInstancesRef } = useStreamingPlayer();
+  const { setupHLSPlayer, cleanupHLSPlayer, hlsInstancesRef } = useCameraHLS();
+
+  const checkHLSAvailability = async (cameraId: number) => {
+    try {
+      const response = await fetch(`/hls/camera_${cameraId}.m3u8`, { method: 'HEAD' });
+      const isAvailable = response.ok;
+      updateCameraState(cameraId, { hlsAvailable: isAvailable });
+      if (onLog) {
+        onLog(`HLS file for Camera ${cameraId}: ${isAvailable ? 'Available' : 'Not found'}`);
+      }
+      return isAvailable;
+    } catch (error) {
+      updateCameraState(cameraId, { hlsAvailable: false });
+      if (onLog) {
+        onLog(`HLS check failed for Camera ${cameraId}: ${error.message}`);
+      }
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    const savedUrls = localStorage.getItem('jericho-camera-urls');
+    const savedNames = localStorage.getItem('jericho-camera-names');
+    if (savedUrls) {
+      setCameraUrls(JSON.parse(savedUrls));
+    }
+    if (savedNames) {
+      setCameraNames(JSON.parse(savedNames));
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('jericho-camera-urls', JSON.stringify(cameraUrls));
+  }, [cameraUrls]);
+
+  useEffect(() => {
+    localStorage.setItem('jericho-camera-names', JSON.stringify(cameraNames));
+  }, [cameraNames]);
+
+  useEffect(() => {
+    let ws: WebSocket;
+    function connectWebSocket() {
+      // Use the correct WebSocket URL for your backend
+      const wsUrl = `wss://192.168.0.138/ws`;
+
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        if (onLog) onLog("WebSocket connected to backend for stream control");
+      };
+      ws.onclose = () => {
+        if (onLog) onLog("WebSocket disconnected from backend");
+        setTimeout(connectWebSocket, 5000);
+      };
+      ws.onerror = (e) => {
+        if (onLog) onLog("WebSocket connection error - backend server may not be running");
+      };
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "stream_status" && typeof data.cameraId !== "undefined") {
+            const isStarted = data.status === "started";
+            setActiveStreams((prev) => ({
+              ...prev,
+              [data.cameraId]: isStarted
+            }));
+            
+            if (isStarted) {
+              updateCameraState(data.cameraId, {
+                connectionStatus: 'connected',
+                retryCount: 0,
+                lastError: ''
+              });
+              if (onLog) onLog(`Camera ${data.cameraId} stream started successfully`);
+              setTimeout(() => checkHLSAvailability(data.cameraId), 3000);
+            } else {
+              updateCameraState(data.cameraId, {
+                connectionStatus: 'idle',
+                hlsAvailable: false
+              });
+              if (onLog) onLog(`Camera ${data.cameraId} stream stopped`);
+            }
+          }
+          if (data.type === "stream_error" && typeof data.cameraId !== "undefined") {
+            const cameraState = cameraStates[data.cameraId] || initializeCameraState(data.cameraId);
+            
+            setActiveStreams((prev) => ({
+              ...prev,
+              [data.cameraId]: false
+            }));
+            
+            updateCameraState(data.cameraId, {
+              connectionStatus: 'failed',
+              lastError: data.error,
+              retryCount: cameraState.retryCount + 1,
+              hlsAvailable: false
+            });
+            
+            if (onLog) onLog(`Camera ${data.cameraId} stream error: ${data.error} (attempt ${cameraState.retryCount + 1}/${MAX_RETRIES})`);
+            
+            if (cameraState.retryCount < MAX_RETRIES) {
+              const url = cameraUrls[data.cameraId];
+              if (url) {
+                if (onLog) onLog(`Will retry Camera ${data.cameraId} in ${RETRY_DELAY/1000} seconds`);
+                retryTimeoutsRef.current[data.cameraId] = setTimeout(() => {
+                  startStream(data.cameraId, url);
+                }, RETRY_DELAY);
+              }
+            } else {
+              if (onLog) onLog(`Camera ${data.cameraId} exceeded max retries (${MAX_RETRIES}). Manual restart required.`);
+            }
+          }
+        } catch {}
+      };
+      wsRef.current = ws;
+    }
+    connectWebSocket();
+    return () => { 
+      ws && ws.close();
+      Object.values(retryTimeoutsRef.current).forEach(timeout => clearTimeout(timeout));
+      Object.keys(hlsInstancesRef.current).forEach(cameraId => {
+        cleanupHLSPlayer(parseInt(cameraId), onLog);
+      });
+    };
+  }, []);
 
   const getGridClasses = () => {
     const baseClasses = 'h-full';
     
     switch (layout) {
-      case 1: return `grid grid-cols-1 gap-4 ${baseClasses}`;
-      case 2: return `grid grid-cols-2 gap-4 ${baseClasses}`;
-      case 4: return `grid grid-cols-2 grid-rows-2 gap-4 ${baseClasses}`;
-      case 6: return `grid grid-cols-3 grid-rows-2 gap-3 ${baseClasses}`;
-      case 9: return `grid grid-cols-3 grid-rows-3 gap-3 ${baseClasses}`;
-      case 12: return `grid grid-cols-4 grid-rows-3 gap-2 ${baseClasses}`;
-      default: return `grid grid-cols-2 grid-rows-2 gap-4 ${baseClasses}`;
+      case 1:
+        return `grid grid-cols-1 gap-4 ${baseClasses}`;
+      case 2:
+        return `grid grid-cols-2 gap-4 ${baseClasses}`;
+      case 4:
+        return `grid grid-cols-2 grid-rows-2 gap-4 ${baseClasses}`;
+      case 6:
+        return `grid grid-cols-3 grid-rows-2 gap-3 ${baseClasses}`;
+      case 9:
+        return `grid grid-cols-3 grid-rows-3 gap-3 ${baseClasses}`;
+      case 12:
+        return `grid grid-cols-4 grid-rows-3 gap-2 ${baseClasses}`;
+      default:
+        return `grid grid-cols-2 grid-rows-2 gap-4 ${baseClasses}`;
     }
   };
 
@@ -71,22 +198,41 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
       setEditingCamera(null);
       setTempUrl('');
       
+      updateCameraState(cameraId, {
+        retryCount: 0,
+        lastError: '',
+        connectionStatus: 'idle',
+        hlsAvailable: false
+      });
+      
+      if (retryTimeoutsRef.current[cameraId]) {
+        clearTimeout(retryTimeoutsRef.current[cameraId]);
+        delete retryTimeoutsRef.current[cameraId];
+      }
+      
       await startStream(cameraId, url);
       
       toast({
         title: "Camera URL Updated",
-        description: `Camera ${cameraId} configured for HLS streaming`,
+        description: `Camera ${cameraId} configured successfully`,
       });
     } catch (error) {
       toast({
         title: "Invalid URL",
-        description: error instanceof Error ? error.message : "Invalid URL format",
+        description: error.message,
         variant: "destructive",
       });
     }
   };
 
   const startStream = async (cameraId: number, url: string) => {
+    const cameraState = cameraStates[cameraId] || initializeCameraState(cameraId);
+    
+    if (cameraState.retryCount >= MAX_RETRIES) {
+      if (onLog) onLog(`Camera ${cameraId} has exceeded max retries. Reset required.`);
+      return;
+    }
+
     updateCameraState(cameraId, {
       connectionStatus: 'connecting',
       lastAttempt: Date.now(),
@@ -100,20 +246,28 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
         rtspUrl: url,
       }));
       
-      if (onLog) onLog(`Starting HLS stream for Camera ${cameraId}`);
+      if (onLog) onLog(`Attempting to start Camera ${cameraId} stream (attempt ${cameraState.retryCount + 1}/${MAX_RETRIES})`);
     } else {
       updateCameraState(cameraId, {
         connectionStatus: 'failed',
-        lastError: 'Backend not connected'
+        lastError: 'Backend WebSocket not connected'
       });
+      if (onLog) onLog(`Cannot start Camera ${cameraId} - backend WebSocket not connected`);
     }
   };
 
   const stopStream = async (cameraId: number) => {
-    cleanupPlayer(cameraId, onLog);
-    
+    if (retryTimeoutsRef.current[cameraId]) {
+      clearTimeout(retryTimeoutsRef.current[cameraId]);
+      delete retryTimeoutsRef.current[cameraId];
+    }
+
+    cleanupHLSPlayer(cameraId, onLog);
+
     updateCameraState(cameraId, {
       connectionStatus: 'idle',
+      retryCount: 0,
+      lastError: '',
       hlsAvailable: false
     });
 
@@ -123,18 +277,33 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
         cameraId,
       }));
       setActiveStreams(prev => ({ ...prev, [cameraId]: false }));
+      if (onLog) onLog(`Stopped Camera ${cameraId} stream`);
     }
   };
 
   const resetCamera = (cameraId: number) => {
-    cleanupPlayer(cameraId, onLog);
+    if (retryTimeoutsRef.current[cameraId]) {
+      clearTimeout(retryTimeoutsRef.current[cameraId]);
+      delete retryTimeoutsRef.current[cameraId];
+    }
+
+    cleanupHLSPlayer(cameraId, onLog);
+
     updateCameraState(cameraId, {
       retryCount: 0,
       lastError: '',
       connectionStatus: 'idle',
       hlsAvailable: false
     });
+
     setActiveStreams(prev => ({ ...prev, [cameraId]: false }));
+    
+    if (onLog) onLog(`Reset Camera ${cameraId} - ready for manual restart`);
+    
+    toast({
+      title: "Camera Reset",
+      description: `Camera ${cameraId} has been reset and can be restarted manually`,
+    });
   };
 
   const handleNameSubmit = (cameraId: number) => {
@@ -162,88 +331,9 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
     setCameraNames(newNames);
     
     if (onLog) {
-      onLog(`Added ${cameras.length} cameras for HLS streaming`);
+      onLog(`Added ${cameras.length} cameras from comprehensive setup`);
     }
   };
-
-  const clearAllConnections = () => {
-    // Stop all active streams
-    Object.keys(activeStreams).forEach(cameraIdStr => {
-      const cameraId = parseInt(cameraIdStr);
-      if (activeStreams[cameraId]) {
-        stopStream(cameraId);
-      }
-    });
-    
-    // Clear all HLS instances
-    Object.keys(hlsInstancesRef.current).forEach(cameraIdStr => {
-      const cameraId = parseInt(cameraIdStr);
-      cleanupPlayer(cameraId, onLog);
-    });
-    
-    onLog?.("All camera connections cleared");
-  };
-
-  useEffect(() => {
-    const savedUrls = localStorage.getItem('jericho-camera-urls');
-    const savedNames = localStorage.getItem('jericho-camera-names');
-    if (savedUrls) {
-      setCameraUrls(JSON.parse(savedUrls));
-    }
-    if (savedNames) {
-      setCameraNames(JSON.parse(savedNames));
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('jericho-camera-urls', JSON.stringify(cameraUrls));
-  }, [cameraUrls]);
-
-  useEffect(() => {
-    localStorage.setItem('jericho-camera-names', JSON.stringify(cameraNames));
-  }, [cameraNames]);
-
-  useEffect(() => {
-    let ws: WebSocket;
-    function connectWebSocket() {
-      const wsUrl = `ws://192.168.0.138/api/ws`;
-      ws = new WebSocket(wsUrl);
-      
-      ws.onopen = () => {
-        if (onLog) onLog("Connected to backend for stream control");
-      };
-      
-      ws.onclose = () => {
-        if (onLog) onLog("Backend connection lost, reconnecting...");
-        setTimeout(connectWebSocket, 5000);
-      };
-      
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === "stream_status" && typeof data.cameraId !== "undefined") {
-            const isStarted = data.status === "started";
-            setActiveStreams((prev) => ({
-              ...prev,
-              [data.cameraId]: isStarted
-            }));
-            
-            if (onLog) {
-              onLog(`Camera ${data.cameraId} backend stream ${isStarted ? 'started' : 'stopped'}`);
-            }
-          }
-        } catch {}
-      };
-      
-      wsRef.current = ws;
-    }
-    
-    connectWebSocket();
-    return () => { 
-      ws && ws.close();
-      Object.values(retryTimeoutsRef.current).forEach(timeout => clearTimeout(timeout));
-    };
-  }, []);
 
   useEffect(() => {
     const cameraIds = Array.from({ length: isFullscreen ? 12 : layout }, (_, i) =>
@@ -255,22 +345,19 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
       const videoEl = videoRefs.current[cameraId];
       
       if (isActive && videoEl && !hlsInstancesRef.current[cameraId]) {
-        // Delay slightly to allow backend to generate HLS files
-        setTimeout(() => {
-          setupPlayer(cameraId, videoEl, onLog, updateCameraState);
-        }, 2000);
+        setupHLSPlayer(cameraId, videoEl, onLog, updateCameraState);
       }
-      if (!isActive && hlsInstancesRef.current[cameraId]) {
-        cleanupPlayer(cameraId, onLog);
+      if ((!isActive || !videoEl) && hlsInstancesRef.current[cameraId]) {
+        cleanupHLSPlayer(cameraId, onLog);
       }
     });
 
     return () => {
       cameraIds.forEach((cameraId) => {
-        cleanupPlayer(cameraId, onLog);
+        cleanupHLSPlayer(cameraId, onLog);
       });
     };
-  }, [activeStreams, layout, isFullscreen, currentPage]);
+  }, [activeStreams, layout, isFullscreen, currentPage, setupHLSPlayer, cleanupHLSPlayer, hlsInstancesRef, onLog, updateCameraState]);
 
   const renderCamera = (cameraId: number) => {
     return (
@@ -295,7 +382,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
         startStream={startStream}
         stopStream={stopStream}
         resetCamera={resetCamera}
-        MAX_RETRIES={3}
+        MAX_RETRIES={MAX_RETRIES}
         onLog={onLog}
         videoRefs={videoRefs}
         updateCameraState={updateCameraState}
@@ -306,6 +393,8 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
   const effectiveLayout = layout;
   const camerasToShow = effectiveLayout;
   const startCameraId = (currentPage - 1) * effectiveLayout + 1;
+
+  // Check if grid is empty (no cameras configured)
   const hasAnyCameras = Object.keys(cameraUrls).length > 0;
 
   return (
@@ -313,9 +402,9 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
       {/* Control Bar */}
       <div className="flex items-center justify-between p-4 bg-gray-900/50 border-b border-gray-700">
         <div className="flex items-center space-x-4">
-          <h2 className="text-lg font-semibold text-white">HLS Camera Display</h2>
+          <h2 className="text-lg font-semibold text-white">Camera Display</h2>
           <span className="text-sm text-gray-400">
-            Page {currentPage} • {layout} cameras • ~5s delay
+            Page {currentPage} • {layout} cameras
           </span>
         </div>
         
@@ -336,8 +425,6 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
             cameraUrls={cameraUrls}
             cameraNames={cameraNames}
           />
-          
-          <ClearConnectionsButton onClearAll={clearAllConnections} />
         </div>
       </div>
 
@@ -348,8 +435,8 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
             <div className="text-center space-y-4">
               <Camera className="w-16 h-16 mx-auto text-gray-500" />
               <div>
-                <h3 className="text-xl font-semibold text-white mb-2">HLS Streaming Ready</h3>
-                <p className="text-gray-400 mb-4">Optimized for multiple camera streams with ~5s latency</p>
+                <h3 className="text-xl font-semibold text-white mb-2">Welcome to Jericho Security</h3>
+                <p className="text-gray-400 mb-4">Your camera display is ready. Add cameras to get started.</p>
                 <Button
                   onClick={() => setShowCameraSetup(true)}
                   className="bg-blue-600 text-white hover:bg-blue-700"

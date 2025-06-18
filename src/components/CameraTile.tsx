@@ -217,8 +217,9 @@ export const CameraTile: React.FC<CameraTileProps> = ({
         {isActive ? (
           <VideoPlayer
             cameraId={cameraId}
+            isActive={isActive}
             onLog={onLog}
-            onSnapshot={onSnapshot}
+            updateCameraState={updateCameraState}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gray-700">

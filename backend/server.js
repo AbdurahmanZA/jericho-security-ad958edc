@@ -1,50 +1,30 @@
-
 const express = require('express');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
-const http = require('http');
+const { spawn } = require('child_process');
 const fs = require('fs');
+const WebSocket = require('ws');
+const http = require('http');
+const WebRTCSignalingServer = require('./webrtc-signaling');
 
-// Import modular components
-const WebSocketManager = require('./websocket');
-const healthRoutes = require('./routes/health');
-const cameraRoutes = require('./routes/cameras');
-const streamRoutes = require('./routes/streams');
-const webrtcRoutes = require('./routes/webrtc');
+// Import route modules
 const { initializeSipRoutes } = require('./routes/sip');
 
 const app = express();
 const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+// Initialize WebRTC signaling server
+const webrtcSignaling = new WebRTCSignalingServer(server);
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// Create data directory if it doesn't exist
-const dataDir = path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
-
-// Initialize SQLite database with proper path
-const dbPath = path.join(dataDir, 'jericho.db');
-console.log('Database path:', dbPath);
-
-let db;
-try {
-  db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-      console.error('Error opening database:', err);
-      process.exit(1);
-    } else {
-      console.log('Connected to SQLite database at:', dbPath);
-    }
-  });
-} catch (error) {
-  console.error('Failed to create database:', error);
-  process.exit(1);
-}
+// Initialize SQLite database
+const dbPath = path.join(__dirname, 'jericho.db');
+const db = new sqlite3.Database(dbPath);
 
 // Initialize database tables
 db.serialize(() => {
@@ -89,34 +69,45 @@ db.serialize(() => {
   )`);
 });
 
-// Store active streams
+// Store active streams and WebSocket connections
 const activeStreams = new Map();
+const clients = new Set();
 
-// Initialize WebSocket manager
-const wsManager = new WebSocketManager(server);
+// WebSocket connection handling
+wss.on('connection', (ws) => {
+  console.log('New WebSocket connection established');
+  clients.add(ws);
 
-// Make shared resources available to routes
-app.set('db', db);
-app.set('activeStreams', activeStreams);
-app.set('clients', wsManager.clients);
-app.set('wsManager', wsManager);
+  ws.on('close', () => {
+    console.log('WebSocket connection closed');
+    clients.delete(ws);
+  });
 
-// Mount routes - Health routes MUST be mounted first and correctly
-app.use('/api/health', healthRoutes);
-app.use('/api/cameras', cameraRoutes);
-app.use('/api/streams', streamRoutes);
-app.use('/api/webrtc', webrtcRoutes);
-app.use('/api/sip', initializeSipRoutes(db));
+  ws.on('error', (error) => {
+    console.error('WebSocket error:', error);
+    clients.delete(ws);
+  });
 
-// Create HLS directory if it doesn't exist
-const hlsDir = path.join(__dirname, 'hls');
-if (!fs.existsSync(hlsDir)) {
-  fs.mkdirSync(hlsDir, { recursive: true });
-  console.log('Created HLS directory:', hlsDir);
+  // Send initial status
+  ws.send(JSON.stringify({
+    type: 'connection_status',
+    status: 'connected',
+    timestamp: new Date().toISOString()
+  }));
+});
+
+// Broadcast to all connected clients
+function broadcast(data) {
+  const message = JSON.stringify(data);
+  clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  });
 }
 
-// Serve static HLS files
-app.use('/hls', express.static(hlsDir));
+// Initialize SIP routes
+app.use('/api/sip', initializeSipRoutes(db));
 
 // Basic API routes
 app.get('/api/status', (req, res) => {
@@ -124,34 +115,237 @@ app.get('/api/status', (req, res) => {
     status: 'running',
     timestamp: new Date().toISOString(),
     activeStreams: activeStreams.size,
-    connectedClients: wsManager.getClientsCount(),
-    database: 'connected',
-    freepbx: 'integrated'
+    connectedClients: clients.size,
+    database: 'connected'
   });
 });
 
-// Add a test endpoint to verify API is working
-app.get('/api/test', (req, res) => {
-  res.json({
-    status: 'API is working',
-    timestamp: new Date().toISOString(),
-    endpoints: [
-      '/api/health/database',
-      '/api/health/ffmpeg', 
-      '/api/health/streams',
-      '/api/health/test-rtsp',
-      '/api/sip/config',
-      '/api/sip/extensions'
-    ]
+// Cameras API
+app.get('/api/cameras', (req, res) => {
+  db.all('SELECT * FROM cameras ORDER BY id', (err, rows) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    res.json(rows || []);
   });
 });
 
-// Catch-all for API routes that don't exist
-app.use('/api/*', (req, res) => {
-  res.status(404).json({
-    error: 'API endpoint not found',
-    path: req.path,
-    method: req.method
+app.post('/api/cameras', (req, res) => {
+  const { name, url, enabled = true } = req.body;
+  
+  db.run('INSERT INTO cameras (name, url, enabled) VALUES (?, ?, ?)',
+    [name, url, enabled ? 1 : 0],
+    function(err) {
+      if (err) {
+        res.status(500).json({ error: err.message });
+        return;
+      }
+      res.json({ id: this.lastID, name, url, enabled });
+    }
+  );
+});
+
+app.put('/api/cameras/:id', (req, res) => {
+  const { name, url, enabled } = req.body;
+  const id = req.params.id;
+  
+  db.run('UPDATE cameras SET name = ?, url = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    [name, url, enabled ? 1 : 0, id],
+    function(err) {
+      if (err) {
+        res.status(500).json({ error: err.message });
+        return;
+      }
+      res.json({ id, name, url, enabled });
+    }
+  );
+});
+
+app.delete('/api/cameras/:id', (req, res) => {
+  const id = req.params.id;
+  
+  db.run('DELETE FROM cameras WHERE id = ?', [id], function(err) {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    res.json({ deleted: this.changes > 0 });
+  });
+});
+
+// Add WebRTC stream management
+app.post('/api/webrtc/streams/:cameraId/start', (req, res) => {
+  const cameraId = req.params.cameraId;
+  
+  db.get('SELECT * FROM cameras WHERE id = ?', [cameraId], (err, camera) => {
+    if (err || !camera) {
+      res.status(404).json({ error: 'Camera not found' });
+      return;
+    }
+
+    // Store WebRTC stream info
+    db.run('INSERT OR REPLACE INTO webrtc_streams (camera_id, stream_url, enabled) VALUES (?, ?, ?)',
+      [cameraId, camera.url, 1]);
+
+    broadcast({
+      type: 'webrtc_stream_ready',
+      cameraId: parseInt(cameraId),
+      timestamp: new Date().toISOString()
+    });
+
+    res.json({ 
+      status: 'webrtc_ready', 
+      cameraId: parseInt(cameraId),
+      signaling_url: '/api/ws'
+    });
+  });
+});
+
+app.get('/api/webrtc/streams/:cameraId/status', (req, res) => {
+  const cameraId = req.params.cameraId;
+  
+  db.get('SELECT * FROM webrtc_streams WHERE camera_id = ?', [cameraId], (err, stream) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    
+    res.json({
+      cameraId: parseInt(cameraId),
+      webrtc_available: !!stream && stream.enabled,
+      stream_url: stream?.stream_url || null
+    });
+  });
+});
+
+// Stream control
+app.post('/api/streams/:cameraId/start', (req, res) => {
+  const cameraId = req.params.cameraId;
+  
+  // Get camera details
+  db.get('SELECT * FROM cameras WHERE id = ?', [cameraId], (err, camera) => {
+    if (err || !camera) {
+      res.status(404).json({ error: 'Camera not found' });
+      return;
+    }
+
+    // Start FFmpeg process for HLS
+    const hlsPath = path.join(__dirname, 'hls', `camera_${cameraId}.m3u8`);
+    const segmentPath = path.join(__dirname, 'hls', `camera_${cameraId}_%03d.ts`);
+    
+    // Ensure HLS directory exists
+    const hlsDir = path.dirname(hlsPath);
+    if (!fs.existsSync(hlsDir)) {
+      fs.mkdirSync(hlsDir, { recursive: true });
+    }
+
+    const ffmpegArgs = [
+      '-i', camera.url,
+      '-c:v', 'libx264',
+      '-c:a', 'aac',
+      '-f', 'hls',
+      '-hls_time', '2',
+      '-hls_list_size', '5',
+      '-hls_flags', 'delete_segments',
+      '-y',
+      hlsPath
+    ];
+
+    const ffmpeg = spawn('ffmpeg', ffmpegArgs);
+    
+    ffmpeg.on('spawn', () => {
+      activeStreams.set(parseInt(cameraId), {
+        process: ffmpeg,
+        camera: camera,
+        hlsPath: hlsPath,
+        startTime: new Date()
+      });
+
+      // Update stream status
+      db.run('INSERT OR REPLACE INTO stream_status (camera_id, status) VALUES (?, ?)',
+        [cameraId, 'running']);
+
+      broadcast({
+        type: 'stream_started',
+        cameraId: parseInt(cameraId),
+        timestamp: new Date().toISOString()
+      });
+
+      res.json({ status: 'started', cameraId: parseInt(cameraId) });
+    });
+
+    ffmpeg.on('error', (error) => {
+      console.error(`Stream error for camera ${cameraId}:`, error);
+      activeStreams.delete(parseInt(cameraId));
+      
+      db.run('UPDATE stream_status SET status = ?, error_message = ? WHERE camera_id = ?',
+        ['error', error.message, cameraId]);
+
+      broadcast({
+        type: 'stream_error',
+        cameraId: parseInt(cameraId),
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    ffmpeg.on('exit', (code) => {
+      console.log(`Stream ended for camera ${cameraId} with code ${code}`);
+      activeStreams.delete(parseInt(cameraId));
+      
+      db.run('UPDATE stream_status SET status = ? WHERE camera_id = ?',
+        ['stopped', cameraId]);
+
+      broadcast({
+        type: 'stream_stopped',
+        cameraId: parseInt(cameraId),
+        timestamp: new Date().toISOString()
+      });
+    });
+  });
+});
+
+app.post('/api/streams/:cameraId/stop', (req, res) => {
+  const cameraId = parseInt(req.params.cameraId);
+  const stream = activeStreams.get(cameraId);
+  
+  if (stream) {
+    stream.process.kill('SIGTERM');
+    activeStreams.delete(cameraId);
+    
+    db.run('UPDATE stream_status SET status = ? WHERE camera_id = ?',
+      ['stopped', cameraId]);
+
+    broadcast({
+      type: 'stream_stopped',
+      cameraId: cameraId,
+      timestamp: new Date().toISOString()
+    });
+
+    res.json({ status: 'stopped', cameraId });
+  } else {
+    res.status(404).json({ error: 'Stream not found' });
+  }
+});
+
+// Get stream status
+app.get('/api/streams/:cameraId/status', (req, res) => {
+  const cameraId = req.params.cameraId;
+  
+  db.get('SELECT * FROM stream_status WHERE camera_id = ?', [cameraId], (err, status) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    
+    const isActive = activeStreams.has(parseInt(cameraId));
+    res.json({
+      cameraId: parseInt(cameraId),
+      status: isActive ? 'running' : (status?.status || 'stopped'),
+      lastUpdate: status?.last_update || null,
+      errorMessage: status?.error_message || null
+    });
   });
 });
 
@@ -159,9 +353,8 @@ const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
   console.log(`Jericho Security Backend Server running on port ${PORT}`);
-  console.log(`WebSocket server ready for connections at /api/ws`);
-  console.log(`FreePBX Integration API available at /api/sip`);
-  console.log(`Health checks available at /api/health/*`);
+  console.log(`WebSocket server ready for connections`);
+  console.log(`SIP/VoIP API available at /api/sip`);
 });
 
 // Graceful shutdown
@@ -174,9 +367,7 @@ process.on('SIGTERM', () => {
   }
   
   // Close database
-  if (db) {
-    db.close();
-  }
+  db.close();
   
   // Close server
   server.close(() => {

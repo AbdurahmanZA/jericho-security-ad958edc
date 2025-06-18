@@ -1,176 +1,141 @@
 
-import React, { useRef, useEffect, useState } from 'react';
-import { Play, Square, AlertTriangle, Clock, Camera } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useStreamingPlayer } from '@/hooks/useStreamingPlayer';
-import { CameraState } from '@/hooks/useCameraState';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useWebRTC } from '@/hooks/useWebRTC';
+import { useCameraHLS } from '@/hooks/useCameraHLS';
 
 interface VideoPlayerProps {
   cameraId: number;
-  className?: string;
-  autoStart?: boolean;
+  isActive: boolean;
   onLog?: (msg: string) => void;
-  showControls?: boolean;
-  onSnapshot?: (cameraId: number) => void;
-  updateCameraState?: (id: number, updates: Partial<CameraState>) => void;
+  updateCameraState?: (i: number, updates: any) => void;
 }
 
-export const VideoPlayer: React.FC<VideoPlayerProps> = ({
+export const VideoPlayer: React.FC<VideoPlayerProps> = React.memo(({
   cameraId,
-  className = "",
-  autoStart = false,
+  isActive,
   onLog,
-  showControls = true,
-  onSnapshot,
   updateCameraState
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'failed'>('idle');
-  const [lastError, setLastError] = useState<string>('');
+  const [streamType, setStreamType] = useState<'webrtc' | 'hls' | 'none'>('none');
+  const [isConnecting, setIsConnecting] = useState(false);
+  const connectionAttemptRef = useRef<number>(0);
+  
+  const { setupWebRTCPlayer, cleanupWebRTCPlayer } = useWebRTC();
+  const { setupHLSPlayer, cleanupHLSPlayer } = useCameraHLS();
 
-  const { setupPlayer, cleanupPlayer } = useStreamingPlayer();
+  // Memoize the log function to prevent unnecessary re-renders
+  const logMessage = useCallback((msg: string) => {
+    onLog?.(msg);
+  }, [onLog]);
 
-  const handleCameraStateUpdate = (id: number, updates: any) => {
-    if (updates.hlsAvailable !== undefined) {
-      setIsConnected(updates.hlsAvailable);
-      setConnectionStatus(updates.hlsAvailable ? 'connected' : 'failed');
-    }
-    if (updates.lastError) {
-      setLastError(updates.lastError);
-    }
-    
-    // Pass updates to parent component if provided
-    if (updateCameraState) {
-      updateCameraState(id, updates);
-    }
-  };
+  // Memoize the camera state update function
+  const updateState = useCallback((updates: any) => {
+    updateCameraState?.(cameraId, updates);
+  }, [updateCameraState, cameraId]);
 
-  const handleSnapshot = () => {
-    if (videoRef.current && onSnapshot) {
-      onSnapshot(cameraId);
-    }
-  };
+  // Cleanup function
+  const cleanup = useCallback(() => {
+    cleanupWebRTCPlayer(cameraId, logMessage);
+    cleanupHLSPlayer(cameraId, logMessage);
+    setStreamType('none');
+    setIsConnecting(false);
+  }, [cameraId, cleanupWebRTCPlayer, cleanupHLSPlayer, logMessage]);
 
+  // Connection attempt function
+  const attemptConnection = useCallback(async () => {
+    if (!isActive || !videoRef.current) return;
+
+    const currentAttempt = ++connectionAttemptRef.current;
+    setIsConnecting(true);
+    logMessage(`Attempting connection for Camera ${cameraId}`);
+
+    try {
+      // Try WebRTC first
+      logMessage(`Trying WebRTC for Camera ${cameraId}`);
+      const webrtcSuccess = await setupWebRTCPlayer(cameraId, videoRef.current, logMessage);
+      
+      // Check if this is still the current attempt
+      if (currentAttempt !== connectionAttemptRef.current) return;
+      
+      if (webrtcSuccess) {
+        setStreamType('webrtc');
+        setIsConnecting(false);
+        logMessage(`Camera ${cameraId} connected via WebRTC (low latency)`);
+        updateState({ connectionType: 'webrtc', hlsAvailable: false });
+        return;
+      }
+
+      // Fallback to HLS
+      logMessage(`WebRTC failed for Camera ${cameraId}, falling back to HLS`);
+      
+      // Small delay before trying HLS
+      setTimeout(() => {
+        if (currentAttempt === connectionAttemptRef.current && videoRef.current && isActive) {
+          setupHLSPlayer(cameraId, videoRef.current, logMessage, updateState);
+          setStreamType('hls');
+          setIsConnecting(false);
+          logMessage(`Camera ${cameraId} connected via HLS (standard latency)`);
+        }
+      }, 1000);
+
+    } catch (error) {
+      if (currentAttempt === connectionAttemptRef.current) {
+        setIsConnecting(false);
+        logMessage(`Connection failed for Camera ${cameraId}: ${error}`);
+      }
+    }
+  }, [isActive, cameraId, setupWebRTCPlayer, setupHLSPlayer, logMessage, updateState]);
+
+  // Main effect for handling active state changes
   useEffect(() => {
-    if (autoStart && videoRef.current) {
-      handleConnect();
+    if (!isActive) {
+      cleanup();
+      return;
     }
-    return () => {
-      cleanupPlayer(cameraId, onLog);
-    };
-  }, [autoStart, cameraId]);
 
-  const handleConnect = () => {
-    if (!videoRef.current) return;
-    
-    setConnectionStatus('connecting');
-    setLastError('');
-    onLog?.(`[VideoPlayer ${cameraId}] Starting HLS connection`);
-    
-    setupPlayer(cameraId, videoRef.current, onLog, handleCameraStateUpdate);
-  };
-
-  const handleDisconnect = () => {
-    cleanupPlayer(cameraId, onLog);
-    setIsConnected(false);
-    setConnectionStatus('idle');
-    setLastError('');
-    onLog?.(`[VideoPlayer ${cameraId}] Disconnected`);
-  };
-
-  const getStatusColor = () => {
-    switch (connectionStatus) {
-      case 'connected': return 'text-green-500';
-      case 'connecting': return 'text-yellow-500';
-      case 'failed': return 'text-red-500';
-      default: return 'text-gray-500';
+    // Only attempt connection if video element is ready
+    if (videoRef.current) {
+      attemptConnection();
     }
-  };
 
-  const getStatusText = () => {
-    switch (connectionStatus) {
-      case 'connected': return 'HLS Connected';
-      case 'connecting': return 'Connecting...';
-      case 'failed': return 'Connection Failed';
-      default: return 'Ready';
+    return cleanup;
+  }, [isActive, attemptConnection, cleanup]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return cleanup;
+  }, [cleanup]);
+
+  // Memoize the stream indicator to prevent unnecessary re-calculations
+  const streamIndicator = useMemo(() => {
+    if (isConnecting) return { text: 'Connecting...', color: 'text-yellow-400' };
+    switch (streamType) {
+      case 'webrtc': return { text: 'Live', color: 'text-green-400' };
+      case 'hls': return { text: 'Streaming', color: 'text-blue-400' };
+      default: return { text: 'Offline', color: 'text-gray-400' };
     }
-  };
+  }, [isConnecting, streamType]);
 
   return (
-    <div className={`relative bg-gray-900 rounded-lg overflow-hidden ${className}`}>
+    <div className="relative w-full h-full">
       <video
         ref={videoRef}
         className="w-full h-full object-cover bg-black"
-        controls={false}
+        autoPlay
         muted
         playsInline
-      />
+        controls={false}
+      >
+        Your browser does not support video playbook.
+      </video>
       
-      {/* Status Overlay */}
-      <div className="absolute top-2 left-2 flex items-center space-x-2">
-        <div className={`flex items-center space-x-1 text-xs font-medium ${getStatusColor()}`}>
-          {connectionStatus === 'connecting' && <Clock className="w-3 h-3 animate-spin" />}
-          {connectionStatus === 'failed' && <AlertTriangle className="w-3 h-3" />}
-          <span>{getStatusText()}</span>
-        </div>
-        {isConnected && (
-          <div className="text-xs text-yellow-400 bg-black/50 px-1 rounded">
-            ~5s delay
-          </div>
-        )}
+      {/* Stream type indicator */}
+      <div className="absolute top-2 right-2 px-2 py-1 bg-black bg-opacity-70 rounded text-xs">
+        <span className={streamIndicator.color}>{streamIndicator.text}</span>
       </div>
-
-      {/* Controls */}
-      {showControls && (
-        <div className="absolute bottom-2 right-2 flex space-x-1">
-          {onSnapshot && isConnected && (
-            <Button
-              size="sm"
-              onClick={handleSnapshot}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              <Camera className="w-3 h-3" />
-            </Button>
-          )}
-          {!isConnected ? (
-            <Button
-              size="sm"
-              onClick={handleConnect}
-              disabled={connectionStatus === 'connecting'}
-              className="bg-green-600 hover:bg-green-700 text-white"
-            >
-              <Play className="w-3 h-3" />
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              onClick={handleDisconnect}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              <Square className="w-3 h-3" />
-            </Button>
-          )}
-        </div>
-      )}
-
-      {/* Error Display */}
-      {lastError && connectionStatus === 'failed' && (
-        <div className="absolute bottom-2 left-2 text-xs text-red-400 bg-black/75 px-2 py-1 rounded max-w-48 truncate">
-          {lastError}
-        </div>
-      )}
-
-      {/* No Connection Placeholder */}
-      {!isConnected && connectionStatus === 'idle' && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-800/50">
-          <div className="text-center text-gray-400">
-            <Play className="w-12 h-12 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">Camera {cameraId}</p>
-            <p className="text-xs">Click to connect</p>
-          </div>
-        </div>
-      )}
     </div>
   );
-};
+});
+
+VideoPlayer.displayName = 'VideoPlayer';

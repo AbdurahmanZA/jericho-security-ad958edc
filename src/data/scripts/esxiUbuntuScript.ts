@@ -1,389 +1,420 @@
-
 export const esxiUbuntuScript = `#!/bin/bash
-# JERICHO Security System - ESXi Ubuntu 24.04 Production Installation
-# Updated with all latest fixes and enterprise-grade configuration
+# JERICHO Security System - Complete ESXi Ubuntu 24.04 Installation
+# This script installs the complete system with real SIP/VoIP integration and WebRTC
 
 set -e
 
-echo "========================================"
-echo "JERICHO Security System - ESXi Production"
-echo "Ubuntu 24.04 LTS Enterprise Installation"
-echo "========================================"
+echo "Installing JERICHO Security System with Real SIP/VoIP Integration and WebRTC on ESXi Ubuntu..."
 
-# Check if running as root
-if [ "$EUID" -eq 0 ]; then
-    echo "❌ Please do not run this script as root. Use a sudo-enabled user."
-    exit 1
-fi
+# System information
+echo "System Information:"
+echo "==================="
+lscpu | grep "Model name"
+free -h
+df -h /
 
-# Update system
-echo "🔄 Updating system packages..."
+# Update system and install base dependencies
+echo "Updating system packages..."
 sudo apt update && sudo apt upgrade -y
+sudo add-apt-repository universe -y
+sudo apt install -y lsb-release ca-certificates apt-transport-https software-properties-common curl wget git
 
-# Install essential packages
-echo "📦 Installing essential packages..."
-sudo apt install -y git nodejs npm apache2 ffmpeg sqlite3 build-essential curl wget unzip \
-    fail2ban ufw certbot python3-certbot-apache htop tree vim
+# Remove any existing Node.js installations
+sudo apt remove -y nodejs npm node-* 2>/dev/null || true
+sudo apt autoremove -y
 
-# Install Node.js 18+ if needed
-if ! node --version | grep -q "v1[89]\\|v[2-9][0-9]"; then
-    echo "🟢 Installing Node.js 18..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-    sudo apt install -y nodejs
-fi
+# Install Node.js 20 LTS
+echo "Installing Node.js 20 LTS..."
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
 
-# Configure enhanced security
-echo "🔐 Configuring enhanced security..."
-sudo systemctl enable fail2ban
-sudo systemctl start fail2ban
+echo "Node.js version: \$(node --version)"
+echo "npm version: \$(npm --version)"
 
-# Configure UFW firewall for enterprise
-echo "🔥 Configuring enterprise firewall..."
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow ssh
-sudo ufw allow 80/tcp comment "HTTP"
-sudo ufw allow 443/tcp comment "HTTPS"
-sudo ufw allow 3001/tcp comment "Backend API"
-sudo ufw allow 5060/udp comment "SIP"
-sudo ufw allow 10000:20000/udp comment "RTP"
-sudo ufw --force enable
+# Install FFmpeg for video processing
+echo "Installing FFmpeg..."
+sudo apt install -y ffmpeg
 
-# Enable required Apache modules
-echo "🔧 Configuring Apache modules..."
-sudo a2enmod rewrite
-sudo a2enmod headers
-sudo a2enmod proxy
-sudo a2enmod proxy_http
-sudo a2enmod proxy_wstunnel
-sudo a2enmod ssl
-sudo a2enmod expires
+# Install SQLite3 for database
+sudo apt install -y sqlite3 libsqlite3-dev
 
-# Create project directory
-INSTALL_DIR="/opt/jericho-security"
-echo "📁 Creating installation directory: $INSTALL_DIR"
-sudo mkdir -p "$INSTALL_DIR"
-cd "$INSTALL_DIR"
+# Install Asterisk with full VoIP stack
+echo "Installing Asterisk PBX with full codec support..."
+sudo apt install -y asterisk asterisk-modules asterisk-config asterisk-dev build-essential
+sudo apt install -y asterisk-voicemail asterisk-sounds-main asterisk-sounds-en
 
-# Download from GitHub
-echo "⬇️ Downloading JERICHO Security System..."
-REPO_URL="https://github.com/AbdurahmanZA/jericho-security-ad958edc.git"
-
-if sudo git clone "$REPO_URL" .; then
-    echo "✅ Repository cloned successfully"
+# Install G.729 codec (open source version)
+echo "Setting up G.729 codec..."
+cd /tmp
+wget -q http://asterisk.hosting.lv/src/asterisk-g729-1.5.0-x86_64.tar.bz2 || echo "G.729 download may fail - GSM will be used"
+if [ -f asterisk-g729-1.5.0-x86_64.tar.bz2 ]; then
+  tar -xjf asterisk-g729-1.5.0-x86_64.tar.bz2
+  sudo cp asterisk-g729-1.5.0-x86_64/codec_g729.so /usr/lib/asterisk/modules/ 2>/dev/null || true
+  sudo chown asterisk:asterisk /usr/lib/asterisk/modules/codec_g729.so 2>/dev/null || true
+  sudo chmod 755 /usr/lib/asterisk/modules/codec_g729.so 2>/dev/null || true
+  echo "G.729 codec installed successfully"
 else
-    echo "❌ Failed to clone repository. Please ensure:"
-    echo "1. The repository URL is correct"
-    echo "2. You have access to the repository"
-    echo "3. Git credentials are configured if repository is private"
-    exit 1
+  echo "Using built-in GSM codec (recommended for emergency communications)"
 fi
 
-# Install frontend dependencies
-echo "📦 Installing frontend dependencies..."
-sudo npm install --production
+# Install go2rtc for WebRTC streaming
+echo "Installing go2rtc WebRTC Media Server..."
+sudo mkdir -p /opt/go2rtc
+cd /tmp
+wget -O go2rtc https://github.com/AlexxIT/go2rtc/releases/latest/download/go2rtc_linux_amd64 || echo "go2rtc download failed - WebRTC will use fallback"
+if [ -f go2rtc ]; then
+  sudo mv go2rtc /opt/go2rtc/
+  sudo chmod +x /opt/go2rtc/go2rtc
+  echo "go2rtc installed successfully"
+else
+  echo "go2rtc installation failed - continuing with HLS only"
+fi
+
+# Install Apache2 with SSL support
+echo "Installing Apache2 with SSL..."
+sudo apt install -y apache2 apache2-utils
+sudo a2enmod rewrite mime headers ssl proxy proxy_http proxy_wstunnel expires
+
+# Install SSL certificate tools
+sudo apt install -y certbot python3-certbot-apache
+
+# Install development tools
+sudo apt install -y python3-opencv libopencv-dev python3-numpy
+sudo apt install -y v4l-utils gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good
+
+# Stop services for configuration
+sudo systemctl stop apache2
+sudo systemctl stop asterisk
+
+# Create project directories
+sudo mkdir -p /opt/jericho-backend
+sudo mkdir -p /opt/jericho-backend/hls
+sudo mkdir -p /opt/jericho-backend/snapshots
+sudo mkdir -p /var/log/jericho
+
+# Clone and build frontend
+echo "Cloning and building JERICHO frontend..."
+cd /tmp
+rm -rf jericho-security-system
+git clone https://github.com/AbdurahmanZA/jericho-security-ad958edc.git jericho-security-system
+cd jericho-security-system
 
 # Build frontend
-echo "🏗️ Building frontend application..."
-sudo npm run build
+npm install
+npm run build
 
-# Install backend dependencies
-echo "📦 Installing backend dependencies..."
-cd backend
-sudo npm install --production
-cd ..
-
-# Set proper ownership
-sudo chown -R www-data:www-data "$INSTALL_DIR"
-
-# Deploy frontend to Apache
-echo "🚀 Deploying frontend to Apache..."
+# Deploy frontend
 sudo rm -rf /var/www/html/*
 sudo cp -r dist/* /var/www/html/
-sudo chown -R www-data:www-data /var/www/html
+sudo chown -R www-data:www-data /var/www/html/
 
-# Create production Apache virtual host
-echo "⚙️ Configuring production Apache virtual host..."
-sudo tee /etc/apache2/sites-available/jericho-security.conf > /dev/null << 'EOF'
+# Deploy backend
+echo "Deploying backend with SIP/VoIP integration..."
+sudo cp -r backend/* /opt/jericho-backend/
+sudo chown -R www-data:www-data /opt/jericho-backend
+
+# Install backend dependencies
+cd /opt/jericho-backend
+sudo -u www-data npm install
+
+# Create symlinks for media serving
+sudo ln -sf /opt/jericho-backend/hls /var/www/html/hls
+sudo ln -sf /opt/jericho-backend/snapshots /var/www/html/snapshots
+
+# Configure Apache for Jericho
+sudo tee /etc/apache2/sites-available/jericho.conf > /dev/null <<'EOAPACHE'
 <VirtualHost *:80>
     ServerAdmin admin@jericho.local
     ServerName jericho.local
     DocumentRoot /var/www/html
 
-    # Redirect all HTTP to HTTPS
-    RewriteEngine On
-    RewriteCond %{HTTPS} off
-    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
-</VirtualHost>
-
-<VirtualHost *:443>
-    ServerAdmin admin@jericho.local
-    ServerName jericho.local
-    DocumentRoot /var/www/html
-
-    # SSL Configuration
-    SSLEngine on
-    SSLCertificateFile /etc/ssl/certs/jericho-selfsigned.crt
-    SSLCertificateKeyFile /etc/ssl/private/jericho-selfsigned.key
-
-    # Security headers
-    Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-    Header always set X-Content-Type-Options nosniff
-    Header always set X-Frame-Options DENY
-    Header always set X-XSS-Protection "1; mode=block"
-    Header always set Referrer-Policy "strict-origin-when-cross-origin"
-
-    # Enable CORS for camera streams
+    # Enable CORS for all content
     Header always set Access-Control-Allow-Origin "*"
-    Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS, PUT, DELETE"
+    Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
     Header always set Access-Control-Allow-Headers "Content-Type, Authorization"
 
-    # Enable compression
-    LoadModule deflate_module modules/mod_deflate.so
-    <Location />
-        SetOutputFilter DEFLATE
-        SetEnvIfNoCase Request_URI \\.(?:gif|jpe?g|png)$ no-gzip dont-vary
-        SetEnvIfNoCase Request_URI \\.(?:exe|t?gz|zip|bz2|sit|rar)$ no-gzip dont-vary
-    </Location>
-
-    # Enable rewrite engine
+    # Handle preflight requests
     RewriteEngine On
+    RewriteCond %{REQUEST_METHOD} OPTIONS
+    RewriteRule ^(.*)$ $1 [R=200,L]
 
-    # Serve HLS and snapshots files directly
-    RewriteCond %{REQUEST_URI} ^/hls/
-    RewriteRule ^.*$ - [L]
+    <Directory /var/www/html>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
 
-    RewriteCond %{REQUEST_URI} ^/snapshots/
-    RewriteRule ^.*$ - [L]
-
-    # Exclude /assets/ from SPA fallback
-    RewriteCond %{REQUEST_URI} ^/assets/
-    RewriteRule .* - [L]
-
-    # SPA fallback
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^.*$ /index.html [QSA,L]
-
-    # MIME types
-    AddType application/javascript .js
-    AddType text/css .css
-    AddType application/json .json
-
-    # HLS configuration
+    # HLS streaming configuration
     <Directory "/var/www/html/hls">
-        Options -Indexes +FollowSymLinks
+        Options Indexes FollowSymLinks
         AllowOverride None
         Require all granted
-
+        
+        # HLS MIME types
         AddType application/vnd.apple.mpegurl .m3u8
         AddType video/mp2t .ts
-
+        
+        # Cache control for HLS
         ExpiresActive On
         ExpiresByType application/vnd.apple.mpegurl "access plus 1 seconds"
         ExpiresByType video/mp2t "access plus 10 seconds"
-
+        
         Header set Accept-Ranges bytes
-        Header set Cache-Control "no-cache, must-revalidate"
     </Directory>
 
+    # Snapshots configuration
     <Directory "/var/www/html/snapshots">
-        Options -Indexes +FollowSymLinks
+        Options Indexes FollowSymLinks
         AllowOverride None
         Require all granted
-
+        
         ExpiresActive On
         ExpiresByType image/jpeg "access plus 1 hour"
         ExpiresByType image/png "access plus 1 hour"
     </Directory>
 
-    <Directory "/var/www/html/assets">
-        Options -Indexes
-        AllowOverride None
-        Require all granted
-
-        <FilesMatch "\\.(js|css|json)$">
-            ExpiresActive On
-            ExpiresDefault "access plus 1 year"
-        </FilesMatch>
-
-        <FilesMatch "\\.js$">
-            ForceType application/javascript
-        </FilesMatch>
-        <FilesMatch "\\.css$">
-            ForceType text/css
-        </FilesMatch>
-        <FilesMatch "\\.json$">
-            ForceType application/json
-        </FilesMatch>
-    </Directory>
-
-    <Directory "/var/www/html">
-        AllowOverride All
-        Require all granted
-    </Directory>
-
-    # Backend proxy configuration
+    # Proxy backend API
     ProxyPreserveHost On
-    ProxyRequests Off
-
-    # WebSocket proxy (using ws:// for internal communication)
-    ProxyPass /api/ws ws://localhost:3001/api/ws
-    ProxyPassReverse /api/ws ws://localhost:3001/api/ws
-
-    # HTTP API proxy
     ProxyPass /api/ http://localhost:3001/api/
     ProxyPassReverse /api/ http://localhost:3001/api/
+    
+    # WebSocket proxy
+    ProxyPass /ws/ ws://localhost:3001/
+    ProxyPassReverse /ws/ ws://localhost:3001/
 
     ErrorLog \${APACHE_LOG_DIR}/jericho_error.log
     CustomLog \${APACHE_LOG_DIR}/jericho_access.log combined
 </VirtualHost>
-EOF
+EOAPACHE
+
+# Create SSL configuration
+sudo tee /etc/apache2/sites-available/jericho-ssl.conf > /dev/null <<'EOSSL'
+<VirtualHost *:443>
+    ServerAdmin admin@jericho.local
+    ServerName jericho.local
+    DocumentRoot /var/www/html
+
+    SSLEngine on
+    SSLCertificateFile /etc/ssl/certs/jericho-selfsigned.crt
+    SSLCertificateKeyFile /etc/ssl/private/jericho-selfsigned.key
+
+    # Same configuration as HTTP version but with SSL
+    Header always set Access-Control-Allow-Origin "*"
+    Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Header always set Access-Control-Allow-Headers "Content-Type, Authorization"
+
+    <Directory /var/www/html>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    <Directory "/var/www/html/hls">
+        Options Indexes FollowSymLinks
+        AllowOverride None
+        Require all granted
+        
+        AddType application/vnd.apple.mpegurl .m3u8
+        AddType video/mp2t .ts
+        
+        ExpiresActive On
+        ExpiresByType application/vnd.apple.mpegurl "access plus 1 seconds"
+        ExpiresByType video/mp2t "access plus 10 seconds"
+        
+        Header set Accept-Ranges bytes
+    </Directory>
+
+    ProxyPreserveHost On
+    ProxyPass /api/ http://localhost:3001/api/
+    ProxyPassReverse /api/ http://localhost:3001/api/
+    ProxyPass /ws/ ws://localhost:3001/
+    ProxyPassReverse /ws/ ws://localhost:3001/
+
+    ErrorLog \${APACHE_LOG_DIR}/jericho_ssl_error.log
+    CustomLog \${APACHE_LOG_DIR}/jericho_ssl_access.log combined
+</VirtualHost>
+EOSSL
 
 # Generate self-signed SSL certificate
-echo "🔐 Generating SSL certificate..."
-sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-    -keyout /etc/ssl/private/jericho-selfsigned.key \
-    -out /etc/ssl/certs/jericho-selfsigned.crt \
-    -subj "/C=ZA/ST=Gauteng/L=Johannesburg/O=JERICHO Security/CN=jericho.local"
+echo "Generating SSL certificate..."
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\
+  -keyout /etc/ssl/private/jericho-selfsigned.key \\
+  -out /etc/ssl/certs/jericho-selfsigned.crt \\
+  -subj "/C=ZA/ST=Gauteng/L=Johannesburg/O=JERICHO Security/CN=jericho.local"
 
-# Configure sites
-sudo a2dissite 000-default.conf || true
-sudo a2dissite jericho.conf || true
-sudo a2ensite jericho-security.conf
+# Enable Apache sites
+sudo a2ensite jericho.conf
+sudo a2ensite jericho-ssl.conf
+sudo a2dissite 000-default.conf
 
-# Create production systemd service
-echo "⚙️ Creating production backend service..."
-sudo tee /etc/systemd/system/jericho-backend.service > /dev/null << EOF
+# Configure Asterisk
+echo "Configuring Asterisk for JERICHO..."
+sudo systemctl stop asterisk
+
+# Backup original configs
+sudo cp /etc/asterisk/sip.conf /etc/asterisk/sip.conf.backup 2>/dev/null || true
+sudo cp /etc/asterisk/extensions.conf /etc/asterisk/extensions.conf.backup 2>/dev/null || true
+
+# Set proper ownership
+sudo chown -R asterisk:asterisk /etc/asterisk/
+sudo chmod -R 644 /etc/asterisk/*.conf
+sudo chmod 755 /etc/asterisk/
+
+# Add www-data to asterisk group
+sudo usermod -a -G asterisk www-data
+
+# Configure sudo permissions for Asterisk management
+sudo tee /etc/sudoers.d/jericho-asterisk > /dev/null << 'EOSUDO'
+# JERICHO Security System - Asterisk Management
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl start asterisk
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl stop asterisk
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart asterisk
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl status asterisk
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl is-active asterisk
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/asterisk -rx *
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/asterisk -r
+EOSUDO
+
+# Create Jericho backend service
+sudo tee /etc/systemd/system/jericho-backend.service > /dev/null << 'EOSERVICE'
 [Unit]
-Description=JERICHO Security Backend Server
+Description=JERICHO Security System Backend Server with SIP/VoIP
 After=network.target apache2.service
-Wants=apache2.service
 
 [Service]
 Type=simple
 User=www-data
-Group=www-data
-WorkingDirectory=$INSTALL_DIR/backend
+WorkingDirectory=/opt/jericho-backend
 ExecStart=/usr/bin/node server.js
 Restart=always
-RestartSec=10
-StandardOutput=journal
-StandardError=journal
+RestartSec=5
 Environment=NODE_ENV=production
-Environment=LOG_LEVEL=info
+Environment=PORT=3001
 
-# Security settings
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=$INSTALL_DIR /var/www/html/hls /var/www/html/snapshots
-
-# Resource limits
-LimitNOFILE=65536
-LimitNPROC=4096
+# Logging
+StandardOutput=append:/var/log/jericho/backend.log
+StandardError=append:/var/log/jericho/backend-error.log
 
 [Install]
 WantedBy=multi-user.target
-EOF
+EOSERVICE
 
-# Install Asterisk for enterprise VoIP
-echo "📞 Installing Asterisk for enterprise VoIP..."
-sudo apt install -y asterisk asterisk-modules asterisk-config asterisk-dev
+# Create log files with proper permissions
+sudo touch /var/log/jericho/backend.log
+sudo touch /var/log/jericho/backend-error.log
+sudo chown www-data:www-data /var/log/jericho/*.log
 
-# Create production directories
-echo "📁 Creating production directories..."
-sudo mkdir -p /var/www/html/hls
-sudo mkdir -p /var/www/html/snapshots
-sudo mkdir -p /var/log/jericho
-sudo chown -R www-data:www-data /var/www/html/hls
-sudo chown -R www-data:www-data /var/www/html/snapshots
-sudo chown -R www-data:www-data /var/log/jericho
+# Configure firewall with go2rtc ports
+echo "Configuring firewall..."
+sudo ufw allow 80/tcp comment "HTTP"
+sudo ufw allow 443/tcp comment "HTTPS" 
+sudo ufw allow 3001/tcp comment "Jericho Backend"
+sudo ufw allow 5060/udp comment "SIP"
+sudo ufw allow 5060/tcp comment "SIP"
+sudo ufw allow 10000:20000/udp comment "RTP"
+sudo ufw allow 1984/tcp comment "go2rtc API"
+sudo ufw allow 8554/tcp comment "go2rtc RTSP"
+sudo ufw allow 8555/tcp comment "go2rtc WebRTC"
 
-# Configure log rotation
-echo "📊 Configuring log rotation..."
-sudo tee /etc/logrotate.d/jericho > /dev/null << 'EOF'
-/var/log/jericho/*.log {
-    daily
-    rotate 30
-    compress
-    delaycompress
-    missingok
-    notifempty
-    sharedscripts
-    postrotate
-        systemctl reload jericho-backend
-    endscript
-}
-EOF
-
-# Configure sudo permissions
-sudo tee /etc/sudoers.d/jericho-backend > /dev/null << 'EOF'
-# JERICHO Security System permissions
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl start jericho-backend
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl stop jericho-backend
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart jericho-backend
-www-data ALL=(ALL) NOPASSWD: /bin/systemctl status jericho-backend
-www-data ALL=(ALL) NOPASSWD: /usr/sbin/asterisk -rx *
-EOF
+# Enable go2rtc if installed
+if [ -f /opt/go2rtc/go2rtc ]; then
+  sudo systemctl enable go2rtc
+  sudo systemctl start go2rtc
+fi
 
 # Enable and start services
-echo "🚀 Starting production services..."
+echo "Starting services..."
 sudo systemctl daemon-reload
+sudo systemctl enable apache2
+sudo systemctl enable asterisk
 sudo systemctl enable jericho-backend
-sudo systemctl start jericho-backend
-sudo systemctl restart apache2
 
-# Test services
-echo "🧪 Testing services..."
+sudo systemctl start apache2
+sudo systemctl start jericho-backend
+
+# Wait a moment for backend to initialize
 sleep 5
 
-if curl -f http://localhost:3001/api/status > /dev/null 2>&1; then
-    echo "✅ Backend service is running"
+# Get system information
+IP_ADDRESS=\$(ip route get 1 | awk '{print \$7; exit}')
+HOSTNAME=\$(hostname)
+
+echo ""
+echo "=================================="
+echo "🎉 JERICHO Security System Installation Complete!"
+echo "=================================="
+echo ""
+echo "🌐 Web Access:"
+echo "   HTTP:  http://\${IP_ADDRESS}"
+echo "   HTTPS: https://\${IP_ADDRESS} (self-signed certificate)"
+echo "   Local: http://localhost"
+echo ""
+echo "🔧 Backend Services:"
+echo "   API:       http://\${IP_ADDRESS}:3001/api/status"
+echo "   WebSocket: ws://\${IP_ADDRESS}:3001"
+echo ""
+echo "📞 SIP/VoIP Configuration:"
+echo "   Server IP: \${IP_ADDRESS}"
+echo "   SIP Port:  5060"
+echo "   RTP Range: 10000-20000"
+echo "   Codec:     GSM (default), G.729 (if available)"
+echo ""
+echo "🎥 WebRTC Configuration:"
+if [ -f /opt/go2rtc/go2rtc ]; then
+echo "   go2rtc API: http://\${IP_ADDRESS}:1984"
+echo "   RTSP Port:  8554"
+echo "   WebRTC Port: 8555"
+echo "   Status:     ✅ Installed"
 else
-    echo "⚠️ Backend service may need troubleshooting"
-    sudo journalctl -u jericho-backend --no-pager -n 20
+echo "   Status:     ❌ Not installed (HLS fallback available)"
+fi
+echo ""
+echo "📊 Service Status:"
+sudo systemctl is-active --quiet apache2 && echo "   ✅ Apache2: Running" || echo "   ❌ Apache2: Failed"
+sudo systemctl is-active --quiet jericho-backend && echo "   ✅ Backend: Running" || echo "   ❌ Backend: Failed"
+sudo systemctl is-active --quiet asterisk && echo "   ✅ Asterisk: Running" || echo "   ❌ Asterisk: Stopped (normal - start from web interface)"
+if [ -f /opt/go2rtc/go2rtc ]; then
+  sudo systemctl is-active --quiet go2rtc && echo "   ✅ go2rtc: Running" || echo "   ❌ go2rtc: Failed"
 fi
 
-if curl -f https://localhost -k > /dev/null 2>&1; then
-    echo "✅ HTTPS frontend is accessible"
-else
-    echo "⚠️ HTTPS frontend may need troubleshooting"
-fi
-
-echo "========================================"
-echo "✅ JERICHO Security System - Production Ready!"
-echo "========================================"
-echo "🌐 Frontend: https://localhost (HTTPS with self-signed cert)"
-echo "🔧 Backend API: http://localhost:3001/api/status"
-echo "📁 Installation: $INSTALL_DIR"
-echo "📊 Logs: sudo journalctl -u jericho-backend -f"
-echo "🔐 SSL: Self-signed certificate installed"
 echo ""
-echo "🎯 Production Features:"
-echo "• ✅ HTTPS with SSL redirect"
-echo "• ✅ Security headers and hardening"
-echo "• ✅ Firewall configured (UFW)"
-echo "• ✅ Fail2ban intrusion detection"
-echo "• ✅ Log rotation configured"
-echo "• ✅ Resource limits applied"
-echo "• ✅ WebSocket proxy (ws:// internal)"
-echo "• ✅ HLS streaming optimized"
-echo "• ✅ Asterisk VoIP ready"
+echo "📋 Next Steps:"
+echo "1. Open web browser to http://\${IP_ADDRESS}"
+echo "2. Go to Settings > Streams to configure camera RTSP URLs"
+echo "3. Configure go2rtc streams at http://\${IP_ADDRESS}:1984 (if installed)"
+echo "4. Go to Settings > SIP/VoIP to configure phone system"
+echo "5. Test WebRTC low-latency streaming"
+echo "6. Test SIP registration with softphone"
 echo ""
-echo "🔧 Management Commands:"
-echo "• Backend status: sudo systemctl status jericho-backend"
-echo "• Backend logs: sudo journalctl -u jericho-backend -f"
-echo "• Apache logs: sudo tail -f /var/log/apache2/jericho_error.log"
-echo "• Firewall status: sudo ufw status"
-echo "• SSL certificate: openssl x509 -in /etc/ssl/certs/jericho-selfsigned.crt -text -noout"
+echo "🎯 WebRTC Setup (if go2rtc installed):"
+echo "   1. Edit /opt/go2rtc/go2rtc.yaml with your camera URLs"
+echo "   2. Restart: sudo systemctl restart go2rtc"
+echo "   3. Test WebRTC at: http://\${IP_ADDRESS}:1984"
+echo "   4. Configure camera streams in web interface"
 echo ""
-echo "🚨 Security Notes:"
-echo "• Change default passwords immediately"
-echo "• Configure Let's Encrypt for production SSL"
-echo "• Review firewall rules for your network"
-echo "• Monitor logs regularly"
-echo "• Update system packages regularly"
-echo "========================================"
-`;
+echo "🔍 Monitoring:"
+echo "   Backend logs:  sudo journalctl -u jericho-backend -f"
+echo "   go2rtc logs:   sudo journalctl -u go2rtc -f"
+echo "   Apache logs:   sudo tail -f /var/log/apache2/jericho_access.log"
+echo "   Asterisk CLI:  sudo asterisk -r"
+echo ""
+echo "📞 VoIP Testing:"
+echo "   SIP peers:     sudo asterisk -rx 'sip show peers'"
+echo "   Call history:  sudo asterisk -rx 'cdr show status'"
+echo "   Test call:     Use softphone to call extension 1001"
+echo ""
+echo "🎯 ESXi Optimization Tips:"
+echo "   - Allocate at least 4GB RAM for optimal performance"
+echo "   - Use SSD storage for better I/O performance"  
+echo "   - Enable hardware acceleration if available"
+echo "   - Monitor CPU usage during multiple camera streams"
+echo ""
+echo "🔐 Security Notes:"
+echo "   - Change default SIP extension passwords"
+echo "   - Configure firewall rules for your network"
+echo "   - Use strong passwords for web interface"
+echo "   - Consider VPN access for remote management"
+echo ""
+echo "=================================="
+echo "🟢 Full JERICHO System Ready with WebRTC + SIP/VoIP!"
+echo "=================================="`;

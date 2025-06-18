@@ -11,7 +11,6 @@ import { Badge } from '@/components/ui/badge';
 import { Brain, Eye, Mic, AlertTriangle, Zap, Settings, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { discordService } from '@/services/discordService';
-import { CameraAISelector } from '@/components/CameraAISelector';
 
 interface AIConfig {
   motionDetection: {
@@ -19,7 +18,6 @@ interface AIConfig {
     sensitivity: number;
     objectTypes: string[];
     zones: string[];
-    selectedCameras: number[];
   };
   facialRecognition: {
     enabled: boolean;
@@ -51,8 +49,7 @@ export const EnhancedAISettings: React.FC = () => {
       enabled: false,
       sensitivity: 50,
       objectTypes: [],
-      zones: [],
-      selectedCameras: []
+      zones: []
     },
     facialRecognition: {
       enabled: false,
@@ -181,73 +178,64 @@ export const EnhancedAISettings: React.FC = () => {
         </TabsList>
 
         <TabsContent value="motion">
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Eye className="h-5 w-5" />
-                  Intelligent Motion Detection
-                </CardTitle>
-                <CardDescription>
-                  AI-powered object detection and classification
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="motion-enabled">Enable AI Motion Detection</Label>
-                  <Switch
-                    id="motion-enabled"
-                    checked={config.motionDetection.enabled}
-                    onCheckedChange={(checked) => updateConfig('motionDetection', 'enabled', checked)}
-                  />
-                </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Eye className="h-5 w-5" />
+                Intelligent Motion Detection
+              </CardTitle>
+              <CardDescription>
+                AI-powered object detection and classification
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="motion-enabled">Enable AI Motion Detection</Label>
+                <Switch
+                  id="motion-enabled"
+                  checked={config.motionDetection.enabled}
+                  onCheckedChange={(checked) => updateConfig('motionDetection', 'enabled', checked)}
+                />
+              </div>
 
-                {config.motionDetection.enabled && (
-                  <>
-                    <div>
-                      <Label>Detection Sensitivity: {config.motionDetection.sensitivity}%</Label>
-                      <Slider
-                        value={[config.motionDetection.sensitivity]}
-                        onValueChange={(value) => updateConfig('motionDetection', 'sensitivity', value[0])}
-                        max={100}
-                        step={5}
-                        className="mt-2"
-                      />
+              {config.motionDetection.enabled && (
+                <>
+                  <div>
+                    <Label>Detection Sensitivity: {config.motionDetection.sensitivity}%</Label>
+                    <Slider
+                      value={[config.motionDetection.sensitivity]}
+                      onValueChange={(value) => updateConfig('motionDetection', 'sensitivity', value[0])}
+                      max={100}
+                      step={5}
+                      className="mt-2"
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Object Types to Detect</Label>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {objectTypes.map((type) => (
+                        <Badge
+                          key={type}
+                          variant={config.motionDetection.objectTypes.includes(type) ? "default" : "outline"}
+                          className="cursor-pointer"
+                          onClick={() => {
+                            const current = config.motionDetection.objectTypes;
+                            const updated = current.includes(type)
+                              ? current.filter(t => t !== type)
+                              : [...current, type];
+                            updateConfig('motionDetection', 'objectTypes', updated);
+                          }}
+                        >
+                          {type}
+                        </Badge>
+                      ))}
                     </div>
-
-                    <div>
-                      <Label>Object Types to Detect</Label>
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {objectTypes.map((type) => (
-                          <Badge
-                            key={type}
-                            variant={config.motionDetection.objectTypes.includes(type) ? "default" : "outline"}
-                            className="cursor-pointer"
-                            onClick={() => {
-                              const current = config.motionDetection.objectTypes;
-                              const updated = current.includes(type)
-                                ? current.filter(t => t !== type)
-                                : [...current, type];
-                              updateConfig('motionDetection', 'objectTypes', updated);
-                            }}
-                          >
-                            {type}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            {config.motionDetection.enabled && (
-              <CameraAISelector
-                selectedCameras={config.motionDetection.selectedCameras}
-                onSelectionChange={(cameras) => updateConfig('motionDetection', 'selectedCameras', cameras)}
-              />
-            )}
-          </div>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="facial">

@@ -1,10 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Trash2, Save, TestTube, Monitor, Eye, EyeOff, Clock, Zap, AlertTriangle } from 'lucide-react';
+import { Trash2, Save, TestTube, Monitor, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface StreamConfig {
@@ -18,7 +18,6 @@ interface StreamConfig {
 export const StreamSettings: React.FC = () => {
   const [streams, setStreams] = useState<StreamConfig[]>([]);
   const [editingStream, setEditingStream] = useState<StreamConfig | null>(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -47,6 +46,7 @@ export const StreamSettings: React.FC = () => {
   const saveStreams = (updatedStreams: StreamConfig[]) => {
     setStreams(updatedStreams);
     
+    // Convert back to the format expected by the main app
     const urlObject = updatedStreams.reduce((acc, stream) => {
       if (stream.url && stream.enabled) {
         acc[stream.id] = stream.url;
@@ -55,10 +55,9 @@ export const StreamSettings: React.FC = () => {
     }, {} as Record<number, string>);
     
     localStorage.setItem('jericho-stream-urls', JSON.stringify(urlObject));
-    setHasUnsavedChanges(false);
     
     toast({
-      title: "HLS Streams Updated",
+      title: "Streams Updated",
       description: "Stream configuration saved successfully",
     });
   };
@@ -67,12 +66,7 @@ export const StreamSettings: React.FC = () => {
     const updatedStreams = streams.map(stream => 
       stream.id === id ? { ...stream, ...updates } : stream
     );
-    setStreams(updatedStreams);
-    setHasUnsavedChanges(true);
-  };
-
-  const handleSaveAll = () => {
-    saveStreams(streams);
+    saveStreams(updatedStreams);
   };
 
   const removeStream = (id: number) => {
@@ -105,8 +99,9 @@ export const StreamSettings: React.FC = () => {
       description: `Testing ${stream.name}...`,
     });
     
+    // Simulate connection test
     setTimeout(() => {
-      const success = Math.random() > 0.3;
+      const success = Math.random() > 0.3; // 70% success rate for demo
       toast({
         title: success ? "Connection Successful" : "Connection Failed",
         description: success 
@@ -123,55 +118,27 @@ export const StreamSettings: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-bold uppercase tracking-wide">HLS Stream Management</h3>
+          <h3 className="text-lg font-bold uppercase tracking-wide">Stream Management</h3>
           <p className="text-sm text-muted-foreground mt-1">
-            Configure RTSP camera streams for HLS conversion (~5s latency, optimized for multiple cameras)
+            Configure RTSP camera streams and manage connections
           </p>
         </div>
-        <div className="flex items-center space-x-2">
-          <Button 
-            onClick={handleSaveAll}
-            disabled={!hasUnsavedChanges}
-            className="jericho-btn-primary"
-          >
-            <Save className="w-4 h-4 mr-2" />
-            Save All Changes
-          </Button>
-          <Button onClick={addNewStream} className="jericho-btn-accent">
-            <Monitor className="w-4 h-4 mr-2" />
-            Add Stream
-          </Button>
-        </div>
+        <Button onClick={addNewStream} className="jericho-btn-accent">
+          <Monitor className="w-4 h-4 mr-2" />
+          Add Stream
+        </Button>
       </div>
-
-      {hasUnsavedChanges && (
-        <Alert>
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            You have unsaved changes. Click "Save All Changes" to apply them.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* HLS Information Alert */}
-      <Alert>
-        <Clock className="h-4 w-4" />
-        <AlertDescription>
-          <strong>HLS Streaming Mode Active:</strong> All cameras use HLS streaming with ~5 second latency. 
-          This is optimized for multiple camera viewing (20-30+ streams) with lower server load.
-        </AlertDescription>
-      </Alert>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Stream List */}
         <div className="space-y-4">
-          <h4 className="font-semibold uppercase tracking-wide">Active HLS Streams</h4>
+          <h4 className="font-semibold uppercase tracking-wide">Active Streams</h4>
           
           {streams.length === 0 ? (
             <div className="text-center text-muted-foreground py-8 border-2 border-dashed border-border rounded-lg">
               <Monitor className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p className="font-semibold">No HLS Streams Configured</p>
-              <p className="text-sm mt-1">Add RTSP streams for HLS conversion</p>
+              <p className="font-semibold">No Streams Configured</p>
+              <p className="text-sm mt-1">Add RTSP streams to get started</p>
             </div>
           ) : (
             streams.map((stream) => (
@@ -181,9 +148,6 @@ export const StreamSettings: React.FC = () => {
                     <span className="font-semibold">{stream.name}</span>
                     <Badge variant={stream.connected ? "default" : "secondary"}>
                       {stream.connected ? 'Connected' : 'Disconnected'}
-                    </Badge>
-                    <Badge variant="outline" className="text-yellow-600">
-                      HLS ~5s
                     </Badge>
                   </div>
                   <div className="flex space-x-2">
@@ -218,11 +182,9 @@ export const StreamSettings: React.FC = () => {
                 </div>
                 
                 <div className="flex items-center justify-between">
-                  <div className="flex space-x-2">
-                    <Badge variant={stream.enabled ? "default" : "secondary"}>
-                      {stream.enabled ? 'Enabled' : 'Disabled'}
-                    </Badge>
-                  </div>
+                  <Badge variant={stream.enabled ? "default" : "secondary"}>
+                    {stream.enabled ? 'Enabled' : 'Disabled'}
+                  </Badge>
                   
                   <Button
                     variant="outline"
@@ -242,7 +204,7 @@ export const StreamSettings: React.FC = () => {
         {/* Edit Panel */}
         <div className="space-y-4">
           <h4 className="font-semibold uppercase tracking-wide">
-            {editingStream ? 'HLS Stream Configuration' : 'Select Stream to Edit'}
+            {editingStream ? 'Stream Configuration' : 'Select Stream to Edit'}
           </h4>
           
           {editingStream ? (
@@ -272,7 +234,7 @@ export const StreamSettings: React.FC = () => {
                   placeholder="rtsp://username:password@192.168.1.100:554/stream1"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Will be converted to HLS format for optimized streaming
+                  Enter the complete RTSP URL including credentials
                 </p>
               </div>
               
@@ -284,7 +246,7 @@ export const StreamSettings: React.FC = () => {
                   className="flex-1"
                 >
                   <TestTube className="w-4 h-4 mr-2" />
-                  Test RTSP
+                  Test Connection
                 </Button>
                 <Button
                   onClick={() => {
@@ -319,24 +281,8 @@ export const StreamSettings: React.FC = () => {
         </div>
       </div>
 
-      {/* HLS Optimization Tips */}
       <div className="mt-6 p-4 border border-border rounded-lg bg-card">
-        <div className="flex items-center space-x-2 mb-3">
-          <Zap className="w-5 h-5 text-yellow-500" />
-          <h5 className="font-semibold">HLS Optimization for Multiple Streams</h5>
-        </div>
-        <div className="space-y-2 text-sm text-muted-foreground">
-          <div>• <strong>Latency:</strong> ~5 seconds (acceptable for security monitoring)</div>
-          <div>• <strong>Scalability:</strong> Efficiently handles 20-30+ concurrent streams</div>
-          <div>• <strong>Compatibility:</strong> Works on all browsers without plugins</div>
-          <div>• <strong>Server Load:</strong> Lower CPU usage compared to WebRTC</div>
-          <div>• <strong>Bandwidth:</strong> Adaptive bitrate streaming available</div>
-        </div>
-      </div>
-
-      {/* RTSP URL Examples */}
-      <div className="mt-6 p-4 border border-border rounded-lg bg-card">
-        <h5 className="font-semibold mb-3">RTSP URL Examples (for HLS conversion)</h5>
+        <h5 className="font-semibold mb-3">RTSP URL Examples</h5>
         <div className="space-y-2 text-sm text-muted-foreground font-mono">
           <div>Generic IP Camera: <code>rtsp://admin:password@192.168.1.100:554/stream1</code></div>
           <div>Hikvision: <code>rtsp://admin:password@192.168.1.100:554/Streaming/Channels/101</code></div>
