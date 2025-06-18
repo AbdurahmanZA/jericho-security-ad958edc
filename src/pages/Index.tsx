@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -29,6 +28,7 @@ import SystemStatusBox from '@/components/SystemStatusBox';
 import QuickActions from '@/components/QuickActions';
 import StreamLogsDrawer from '@/components/StreamLogsDrawer';
 import BackendLogsDrawer from '@/components/BackendLogsDrawer';
+import { config } from '@/config/environment';
 
 const Index = () => {
   const [layout, setLayout] = useState(4);
@@ -78,60 +78,55 @@ const Index = () => {
     }));
   }, [layout]);
 
-  // Backend monitoring WebSocket with corrected URL
+  // Backend monitoring WebSocket with dynamic URL
   useEffect(() => {
     let reconnectTimeout: NodeJS.Timeout;
     
     const connectBackendMonitoring = () => {
-      addBackendLog("Attempting WebSocket connection to backend server");
+      const wsUrl = config.backend.wsUrl;
+      addBackendLog(`Attempting WebSocket connection to ${wsUrl}`);
       
-      // Try WebSocket connection - first try secure, then fallback to insecure
-      const tryConnection = (wsUrl: string) => {
-        const ws = new WebSocket(wsUrl);
-        backendWsRef.current = ws;
+      const ws = new WebSocket(wsUrl);
+      backendWsRef.current = ws;
 
-        ws.onopen = () => {
-          addBackendLog(`Connected to backend via ${wsUrl}`);
-          setBackendStatus(prev => ({ ...prev, isConnected: true, lastHeartbeat: new Date() }));
-          
-          if (reconnectTimeout) {
-            clearTimeout(reconnectTimeout);
-          }
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            
-            if (data.type === 'log') {
-              addBackendLog(data.message);
-            } else if (data.type === 'status' || data.type === 'connection_status') {
-              setBackendStatus(prev => ({
-                ...prev,
-                activeStreams: data.activeStreams || prev.activeStreams,
-                lastHeartbeat: new Date()
-              }));
-              addBackendLog(`System status updated - Active streams: ${data.activeStreams || 0}`);
-            }
-          } catch (error) {
-            // Ignore parse errors
-          }
-        };
-
-        ws.onclose = () => {
-          addBackendLog("Backend monitoring disconnected");
-          setBackendStatus(prev => ({ ...prev, isConnected: false }));
-          
-          reconnectTimeout = setTimeout(connectBackendMonitoring, 5000);
-        };
-
-        ws.onerror = () => {
-          addBackendLog(`WebSocket connection failed to ${wsUrl}`);
-        };
+      ws.onopen = () => {
+        addBackendLog(`Connected to backend via ${wsUrl}`);
+        setBackendStatus(prev => ({ ...prev, isConnected: true, lastHeartbeat: new Date() }));
+        
+        if (reconnectTimeout) {
+          clearTimeout(reconnectTimeout);
+        }
       };
 
-      // Try secure WebSocket first, then HTTP if that fails
-      tryConnection('wss://192.168.0.138/ws');
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'log') {
+            addBackendLog(data.message);
+          } else if (data.type === 'status' || data.type === 'connection_status') {
+            setBackendStatus(prev => ({
+              ...prev,
+              activeStreams: data.activeStreams || prev.activeStreams,
+              lastHeartbeat: new Date()
+            }));
+            addBackendLog(`System status updated - Active streams: ${data.activeStreams || 0}`);
+          }
+        } catch (error) {
+          // Ignore parse errors
+        }
+      };
+
+      ws.onclose = () => {
+        addBackendLog("Backend monitoring disconnected");
+        setBackendStatus(prev => ({ ...prev, isConnected: false }));
+        
+        reconnectTimeout = setTimeout(connectBackendMonitoring, 5000);
+      };
+
+      ws.onerror = () => {
+        addBackendLog(`WebSocket connection failed to ${wsUrl}`);
+      };
     };
 
     connectBackendMonitoring();
@@ -148,7 +143,7 @@ const Index = () => {
 
   const handleSnapshot = async (cameraId: number) => {
     try {
-      const response = await fetch(`https://192.168.0.138/api/cameras/${cameraId}/snapshot`, {
+      const response = await fetch(`${config.backend.apiUrl}/cameras/${cameraId}/snapshot`, {
         method: 'POST'
       });
       

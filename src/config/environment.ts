@@ -40,14 +40,22 @@ const baseConfig = {
   },
 };
 
+// Auto-detect protocol and construct URLs dynamically
+const getBackendUrls = () => {
+  const isHttps = window.location.protocol === 'https:';
+  const host = window.location.host || '192.168.0.138';
+  
+  return {
+    apiUrl: `${window.location.protocol}//${host}/api`,
+    wsUrl: `${isHttps ? 'wss' : 'ws'}://${host}/ws`,
+    webrtcSignalingUrl: `${isHttps ? 'wss' : 'ws'}://${host}/api/ws`,
+  };
+};
+
 const environments: Record<string, EnvironmentConfig> = {
   development: {
     name: 'development',
-    backend: {
-      apiUrl: 'http://192.168.0.138/api',
-      wsUrl: 'ws://192.168.0.138/ws',
-      webrtcSignalingUrl: 'ws://192.168.0.138/api/ws',
-    },
+    backend: getBackendUrls(),
     streaming: {
       ...baseConfig.streaming,
       hlsPath: '/hls',
@@ -69,11 +77,7 @@ const environments: Record<string, EnvironmentConfig> = {
 
   demo: {
     name: 'demo',
-    backend: {
-      apiUrl: 'http://192.168.0.138/api',
-      wsUrl: 'ws://192.168.0.138/ws',
-      webrtcSignalingUrl: 'ws://192.168.0.138/api/ws',
-    },
+    backend: getBackendUrls(),
     streaming: {
       ...baseConfig.streaming,
       hlsPath: '/hls',
@@ -96,11 +100,7 @@ const environments: Record<string, EnvironmentConfig> = {
 
   production: {
     name: 'production',
-    backend: {
-      apiUrl: 'http://192.168.0.138/api',
-      wsUrl: 'ws://192.168.0.138/ws',
-      webrtcSignalingUrl: 'ws://192.168.0.138/api/ws',
-    },
+    backend: getBackendUrls(),
     streaming: {
       ...baseConfig.streaming,
       hlsPath: '/hls',
