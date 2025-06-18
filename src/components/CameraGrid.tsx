@@ -10,6 +10,7 @@ import { CameraTile } from './CameraTile';
 import { SaveLayoutButton } from './SaveLayoutButton';
 import { ComprehensiveCameraSetup } from './ComprehensiveCameraSetup';
 import { UniversalVideoPlayer } from './UniversalVideoPlayer';
+import { config } from '@/config/environment';
 
 interface CameraGridProps {
   layout: number;
@@ -80,19 +81,19 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   useEffect(() => {
     let ws: WebSocket;
     function connectWebSocket() {
-      // Use the correct WebSocket URL for your backend
-      const wsUrl = `wss://192.168.0.138/ws`;
+      // Use dynamic WebSocket URL from config
+      const wsUrl = config.backend.wsUrl;
 
       ws = new WebSocket(wsUrl);
       ws.onopen = () => {
-        if (onLog) onLog("WebSocket connected to backend for stream control");
+        if (onLog) onLog(`WebSocket connected to backend at ${wsUrl}`);
       };
       ws.onclose = () => {
         if (onLog) onLog("WebSocket disconnected from backend");
         setTimeout(connectWebSocket, 5000);
       };
       ws.onerror = (e) => {
-        if (onLog) onLog("WebSocket connection error - backend server may not be running");
+        if (onLog) onLog(`WebSocket connection error to ${wsUrl} - backend server may not be running`);
       };
       ws.onmessage = (event) => {
         try {

@@ -1,5 +1,6 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { config } from '@/config/environment';
 
 export interface WebRTCPlayer {
   setupWebRTCPlayer: (cameraId: number, videoElement: HTMLVideoElement, onLog?: (msg: string) => void) => Promise<boolean>;
@@ -13,8 +14,8 @@ export const useWebRTC = (): WebRTCPlayer => {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
 
   const connectWebRTCSignaling = useCallback(() => {
-    // WebSocket URL for WebRTC signaling using HTTPS
-    const wsUrl = `wss://192.168.0.138/api/ws`;
+    // Use dynamic WebSocket URL from config
+    const wsUrl = config.backend.webrtcSignalingUrl;
 
     console.log('Connecting to WebRTC signaling server:', wsUrl);
 
@@ -72,8 +73,8 @@ export const useWebRTC = (): WebRTCPlayer => {
 
       onLog?.(`Setting up WebRTC for Camera ${cameraId}`);
 
-      // Use correct backend URL for WebRTC streams
-      const response = await fetch(`https://192.168.0.138/api/webrtc/streams/${cameraId}/start`, { method: 'POST' });
+      // Use dynamic backend URL from config
+      const response = await fetch(`${config.backend.apiUrl}/webrtc/streams/${cameraId}/start`, { method: 'POST' });
       if (!response.ok) {
         onLog?.(`WebRTC stream not available for Camera ${cameraId}`);
         return false;
