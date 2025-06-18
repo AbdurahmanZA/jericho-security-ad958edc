@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -109,10 +108,15 @@ const Status = () => {
   // Check backend server status
   const checkBackendServer = async () => {
     try {
-      const response = await fetch('https://192.168.0.138/api/status', {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch('http://192.168.0.138/api/status', {
         method: 'GET',
-        timeout: 5000
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (response.ok) {
         const data = await response.json();
@@ -140,7 +144,7 @@ const Status = () => {
   // Check WebSocket connection
   const checkWebSocket = () => {
     try {
-      const ws = new WebSocket('wss://192.168.0.138/ws');
+      const ws = new WebSocket('ws://192.168.0.138/ws');
       wsRef.current = ws;
 
       const timeout = setTimeout(() => {
@@ -192,7 +196,15 @@ const Status = () => {
   // Check database connectivity
   const checkDatabase = async () => {
     try {
-      const response = await fetch('https://192.168.0.138/api/cameras');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch('http://192.168.0.138/api/cameras', {
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
       if (response.ok) {
         const cameras = await response.json();
         updateCheck('database', {
@@ -265,24 +277,24 @@ const Status = () => {
   // Check Nginx proxy
   const checkNginx = async () => {
     try {
-      const response = await fetch('https://192.168.0.138/', { method: 'HEAD' });
+      const response = await fetch('http://192.168.0.138/', { method: 'HEAD' });
       if (response.ok) {
         updateCheck('nginx', {
           status: 'healthy',
-          message: 'Nginx proxy responding',
-          details: 'Web server accessible via HTTPS'
+          message: 'Apache/Nginx proxy responding',
+          details: 'Web server accessible via HTTP'
         });
       } else {
         updateCheck('nginx', {
           status: 'warning',
-          message: `Nginx returned ${response.status}`,
+          message: `Proxy returned ${response.status}`,
           details: 'Proxy may have configuration issues'
         });
       }
     } catch (error) {
       updateCheck('nginx', {
         status: 'error',
-        message: 'Nginx proxy not responding',
+        message: 'Web proxy not responding',
         details: 'Web server may be down'
       });
     }
@@ -291,11 +303,11 @@ const Status = () => {
   // Check SSL certificate
   const checkSSL = async () => {
     try {
-      // In a real implementation, this would check certificate validity
+      // For HTTP setup, SSL is not required
       updateCheck('ssl', {
-        status: 'healthy',
-        message: 'SSL connection established',
-        details: 'HTTPS is working'
+        status: 'warning',
+        message: 'HTTP-only configuration',
+        details: 'SSL/HTTPS not configured (HTTP mode)'
       });
     } catch (error) {
       updateCheck('ssl', {
@@ -312,7 +324,7 @@ const Status = () => {
     updateCheck('systemd', {
       status: 'warning',
       message: 'Service status unknown',
-      details: 'Requires backend API to check systemd services (jericho-backend, nginx)'
+      details: 'Requires backend API to check systemd services (jericho-backend, apache2)'
     });
   };
 
@@ -502,9 +514,9 @@ const Status = () => {
             <div className="text-slate-300 space-y-2">
               <h4 className="font-semibold text-white">WebSocket Connection Issues:</h4>
               <ul className="list-disc list-inside text-sm space-y-1 ml-4">
-                <li>Check if Nginx is running: <code>sudo systemctl status nginx</code></li>
-                <li>Verify firewall allows HTTPS: <code>sudo ufw status</code></li>
-                <li>Check SSL certificate validity</li>
+                <li>Check if Apache is running: <code>sudo systemctl status apache2</code></li>
+                <li>Verify firewall allows HTTP: <code>sudo ufw status</code></li>
+                <li>Check Apache configuration</li>
               </ul>
             </div>
 
