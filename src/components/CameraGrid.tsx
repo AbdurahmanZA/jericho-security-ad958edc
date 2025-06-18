@@ -70,17 +70,29 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
     }
   };
 
+  // Load saved camera data on mount
   useEffect(() => {
     const savedUrls = localStorage.getItem('jericho-camera-urls');
     const savedNames = localStorage.getItem('jericho-camera-names');
     if (savedUrls) {
-      onCameraUrlsChange(JSON.parse(savedUrls));
+      try {
+        const urls = JSON.parse(savedUrls);
+        onCameraUrlsChange(urls);
+      } catch (error) {
+        console.error('Error parsing saved URLs:', error);
+      }
     }
     if (savedNames) {
-      onCameraNamesChange(JSON.parse(savedNames));
+      try {
+        const names = JSON.parse(savedNames);
+        onCameraNamesChange(names);
+      } catch (error) {
+        console.error('Error parsing saved names:', error);
+      }
     }
   }, []);
 
+  // Save camera data when it changes
   useEffect(() => {
     localStorage.setItem('jericho-camera-urls', JSON.stringify(cameraUrls));
   }, [cameraUrls]);
@@ -91,21 +103,27 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
 
   useEffect(() => {
     let ws: WebSocket;
+    let reconnectTimeout: NodeJS.Timeout;
+
     function connectWebSocket() {
-      // Use dynamic WebSocket URL from config
       const wsUrl = config.backend.wsUrl;
 
       ws = new WebSocket(wsUrl);
+      
       ws.onopen = () => {
         if (onLog) onLog(`WebSocket connected to backend at ${wsUrl}`);
+        clearTimeout(reconnectTimeout);
       };
+
       ws.onclose = () => {
         if (onLog) onLog("WebSocket disconnected from backend");
-        setTimeout(connectWebSocket, 5000);
+        reconnectTimeout = setTimeout(connectWebSocket, 5000);
       };
+
       ws.onerror = (e) => {
         if (onLog) onLog(`WebSocket connection error to ${wsUrl} - backend server may not be running`);
       };
+
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -132,6 +150,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
               if (onLog) onLog(`Camera ${data.cameraId} stream stopped`);
             }
           }
+          
           if (data.type === "stream_error" && typeof data.cameraId !== "undefined") {
             const cameraState = cameraStates[data.cameraId] || initializeCameraState(data.cameraId);
             
@@ -161,13 +180,19 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
               if (onLog) onLog(`Camera ${data.cameraId} exceeded max retries (${MAX_RETRIES}). Manual restart required.`);
             }
           }
-        } catch {}
+        } catch (error) {
+          // Ignore JSON parse errors
+        }
       };
+      
       wsRef.current = ws;
     }
+
     connectWebSocket();
+
     return () => { 
-      ws && ws.close();
+      clearTimeout(reconnectTimeout);
+      if (ws) ws.close();
       Object.values(retryTimeoutsRef.current).forEach(timeout => clearTimeout(timeout));
       Object.keys(hlsInstancesRef.current).forEach(cameraId => {
         cleanupHLSPlayer(parseInt(cameraId), onLog);
@@ -208,26 +233,33 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
         throw new Error('URL must start with rtsp://, http://, or https://');
       }
 
+      // Update camera URLs
       onCameraUrlsChange({ ...cameraUrls, [cameraId]: url });
       setEditingCamera(null);
       setTempUrl('');
-      
-      // Activate the stream
-      setActiveStreams(prev => ({ ...prev, [cameraId]: true }));
       
       if (onLog) {
         onLog(`Camera ${cameraId} configured with URL: ${url}`);
       }
       
+      // Show success toast with auto-dismiss
       toast({
         title: "Camera URL Updated",
         description: `Camera ${cameraId} configured successfully`,
+        duration: 3000, // Auto-dismiss after 3 seconds
       });
+
+      // Automatically start the stream after a short delay
+      setTimeout(() => {
+        startStream(cameraId, url);
+      }, 1000);
+      
     } catch (error: any) {
       toast({
         title: "Invalid URL",
         description: error.message,
         variant: "destructive",
+        duration: 5000,
       });
     }
   };
@@ -310,6 +342,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
     toast({
       title: "Camera Reset",
       description: `Camera ${cameraId} has been reset and can be restarted manually`,
+      duration: 3000,
     });
   };
 
@@ -319,6 +352,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
       toast({
         title: "Camera Renamed",
         description: `Camera ${cameraId} renamed to "${tempName.trim()}"`,
+        duration: 3000,
       });
     }
     setEditingName(null);
@@ -326,10 +360,14 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
   };
 
   const toggleStream = (cameraId: number) => {
-    setActiveStreams(prev => ({
-      ...prev,
-      [cameraId]: !prev[cameraId]
-    }));
+    const url = cameraUrls[cameraId];
+    const isCurrentlyActive = activeStreams[cameraId];
+    
+    if (isCurrentlyActive) {
+      stopStream(cameraId);
+    } else if (url) {
+      startStream(cameraId, url);
+    }
   };
 
   useEffect(() => {
@@ -412,6 +450,11 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
               placeholder="rtsp://username:password@192.168.1.100:554/stream1"
               className="text-sm"
               autoFocus
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  handleUrlSubmit(cameraId);
+                }
+              }}
             />
             <div className="flex space-x-2">
               <Button
@@ -445,6 +488,11 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
                   onChange={(e) => setTempName(e.target.value)}
                   className="text-center text-sm"
                   autoFocus
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleNameSubmit(cameraId);
+                    }
+                  }}
                 />
                 <div className="flex space-x-2">
                   <Button
