@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Camera, Play, Square, Image, Edit2, Check, X, AlertTriangle } from 'lucide-react';
@@ -51,8 +50,8 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
   const { cameraStates, updateCameraState, initializeCameraState } = useCameraState();
   const { setupHLSPlayer, cleanupHLSPlayer, hlsInstancesRef } = useCameraHLS();
 
-  // WebSocket message handler
-  const handleWebSocketMessage = (data: any) => {
+  // WebSocket message handler - memoized to prevent recreation
+  const handleWebSocketMessage = useCallback((data: any) => {
     if (data.type === "stream_status" && typeof data.cameraId !== "undefined") {
       const isStarted = data.status === "started";
       setActiveStreams((prev) => ({
@@ -67,7 +66,6 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
           lastError: ''
         });
         onLog?.(`Camera ${data.cameraId} stream started successfully`);
-        // HLS availability will be managed by the HLS hook
       } else {
         updateCameraState(data.cameraId, {
           connectionStatus: 'idle',
@@ -106,14 +104,14 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
         onLog?.(`Camera ${data.cameraId} exceeded max retries (${MAX_RETRIES}). Manual restart required.`);
       }
     }
-  };
+  }, [cameraStates, initializeCameraState, updateCameraState, onLog, cameraUrls, MAX_RETRIES, RETRY_DELAY]);
 
   const { connectionState, connectionRetryCount, maxConnectionRetries, sendMessage, resetConnection } = useWebSocketManager({
     onLog,
     onMessage: handleWebSocketMessage
   });
 
-  // Load saved camera data on mount
+  // Load saved camera data on mount - only once
   useEffect(() => {
     const savedUrls = localStorage.getItem('jericho-camera-urls');
     const savedNames = localStorage.getItem('jericho-camera-names');
@@ -133,7 +131,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
         console.error('Error parsing saved names:', error);
       }
     }
-  }, []);
+  }, []); // Empty dependency array - only run once
 
   // Save camera data when it changes
   useEffect(() => {
@@ -152,7 +150,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
         cleanupHLSPlayer(parseInt(cameraId), onLog);
       });
     };
-  }, []);
+  }, [cleanupHLSPlayer, onLog, hlsInstancesRef]);
 
   const getGridClasses = () => {
     const baseClasses = 'h-full';
@@ -175,47 +173,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
     }
   };
 
-  const handleUrlSubmit = async (cameraId: number) => {
-    if (!tempUrl.trim()) {
-      setEditingCamera(null);
-      return;
-    }
-
-    try {
-      const url = tempUrl.trim();
-      if (!url.startsWith('rtsp://') && !url.startsWith('http://') && !url.startsWith('https://')) {
-        throw new Error('URL must start with rtsp://, http://, or https://');
-      }
-
-      onCameraUrlsChange({ ...cameraUrls, [cameraId]: url });
-      setEditingCamera(null);
-      setTempUrl('');
-      
-      if (onLog) {
-        onLog(`Camera ${cameraId} configured with URL: ${url}`);
-      }
-      
-      toast({
-        title: "Camera URL Updated",
-        description: `Camera ${cameraId} configured successfully`,
-        duration: 3000,
-      });
-
-      setTimeout(() => {
-        startStream(cameraId, url);
-      }, 1000);
-      
-    } catch (error: any) {
-      toast({
-        title: "Invalid URL",
-        description: error.message,
-        variant: "destructive",
-        duration: 5000,
-      });
-    }
-  };
-
-  const startStream = async (cameraId: number, url: string) => {
+  const startStream = useCallback(async (cameraId: number, url: string) => {
     const cameraState = cameraStates[cameraId] || initializeCameraState(cameraId);
     
     if (cameraState.retryCount >= MAX_RETRIES) {
@@ -243,7 +201,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
     if (success) {
       onLog?.(`Attempting to start Camera ${cameraId} stream (attempt ${cameraState.retryCount + 1}/${MAX_RETRIES})`);
     }
-  };
+  }, [cameraStates, initializeCameraState, updateCameraState, connectionState, sendMessage, onLog, MAX_RETRIES]);
 
   const stopStream = async (cameraId: number) => {
     if (retryTimeoutsRef.current[cameraId]) {
@@ -321,7 +279,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
     }
   };
 
-  // HLS player setup effect
+  // HLS player setup effect - memoized dependencies
   useEffect(() => {
     const cameraIds = Array.from({ length: isFullscreen ? 12 : layout }, (_, i) =>
       ((currentPage - 1) * (isFullscreen ? 12 : layout)) + 1 + i
