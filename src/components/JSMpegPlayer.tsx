@@ -45,8 +45,8 @@ export const JSMpegPlayer: React.FC<JSMpegPlayerProps> = ({
 
     try {
       // Check if JSMpeg is available globally
-      if (typeof window !== 'undefined' && (window as any).JSMpeg) {
-        const JSMpeg = (window as any).JSMpeg;
+      if (typeof window !== 'undefined' && window.JSMpeg) {
+        const JSMpeg = window.JSMpeg;
         
         playerRef.current = new JSMpeg.Player(wsUrl, {
           canvas: canvasRef.current,
@@ -96,7 +96,7 @@ export const JSMpegPlayer: React.FC<JSMpegPlayerProps> = ({
           // This would require manual MPEG decoding implementation
         };
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Failed to initialize JSMpeg player for Camera ${cameraId}:`, error);
       onError?.(`Player initialization failed: ${error.message}`);
     }
@@ -104,7 +104,7 @@ export const JSMpegPlayer: React.FC<JSMpegPlayerProps> = ({
 
   useEffect(() => {
     // Load JSMpeg library if not already loaded
-    if (typeof window !== 'undefined' && !(window as any).JSMpeg) {
+    if (typeof window !== 'undefined' && !window.JSMpeg) {
       const script = document.createElement('script');
       script.src = 'https://cdn.jsdelivr.net/npm/jsmpeg@0.2.1/jsmpeg.min.js';
       script.onload = initializePlayer;
