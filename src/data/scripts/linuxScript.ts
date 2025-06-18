@@ -85,6 +85,18 @@ sudo tee /etc/apache2/sites-available/jericho-security.conf > /dev/null <<'EOF'
     # Enable rewrite engine
     RewriteEngine On
 
+    # CRITICAL FIX: WebSocket upgrade handling for /ws endpoint
+    RewriteCond %{HTTP:Upgrade} websocket [NC]
+    RewriteCond %{HTTP:Connection} upgrade [NC]
+    RewriteCond %{REQUEST_URI} ^/ws$ [NC]
+    RewriteRule ^.*$ ws://localhost:3001/ws [P,L]
+
+    # CRITICAL FIX: WebSocket upgrade handling for JSMpeg streams
+    RewriteCond %{HTTP:Upgrade} websocket [NC]
+    RewriteCond %{HTTP:Connection} upgrade [NC]
+    RewriteCond %{REQUEST_URI} ^/jsmpeg/ [NC]
+    RewriteRule ^/jsmpeg/(.*)$ ws://localhost:3001/jsmpeg/\$1 [P,L]
+
     # Serve HLS and snapshots files directly BEFORE SPA fallback
     RewriteCond %{REQUEST_URI} ^/hls/
     RewriteRule ^.*$ - [L]
@@ -163,14 +175,10 @@ sudo tee /etc/apache2/sites-available/jericho-security.conf > /dev/null <<'EOF'
     # Proxy settings for backend API and WebSocket - FIXED CONFIGURATION
     ProxyPreserveHost On
     ProxyRequests Off
-
-    # WebSocket proxy for main backend WebSocket (FIXED)
-    ProxyPass /ws ws://localhost:3001/ws
-    ProxyPassReverse /ws ws://localhost:3001/ws
-
-    # WebSocket proxy for JSMpeg streams (NEW)
-    ProxyPass /jsmpeg/ ws://localhost:3001/jsmpeg/
-    ProxyPassReverse /jsmpeg/ ws://localhost:3001/jsmpeg/
+    
+    # Set proper timeouts for WebSocket connections
+    ProxyTimeout 300
+    ProxyBadHeader Ignore
 
     # Regular HTTP proxy for all other API requests
     ProxyPass /api/ http://localhost:3001/api/
