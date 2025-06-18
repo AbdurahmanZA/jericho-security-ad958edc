@@ -1,14 +1,15 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Camera, Play, Square, Image, Edit2, Check, X, AlertTriangle, Plus } from 'lucide-react';
+import { Camera, Play, Square, Image, Edit2, Check, X, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import Hls from 'hls.js';
 import { useCameraState } from '@/hooks/useCameraState';
 import { useCameraHLS } from '@/hooks/useCameraHLS';
-import { CameraTile } from './CameraTile';
+import { useWebSocketManager } from '@/hooks/useWebSocketManager';
 import { UniversalVideoPlayer } from './UniversalVideoPlayer';
-import { config } from '@/config/environment';
+import { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
+import { EmptyCameraGrid } from './EmptyCameraGrid';
 
 interface CameraGridProps {
   layout: number;
@@ -40,120 +41,17 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
   const [editingName, setEditingName] = useState<number | null>(null);
   const [tempUrl, setTempUrl] = useState('');
   const [tempName, setTempName] = useState('');
-  const [connectionState, setConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'failed'>('disconnected');
   const { toast } = useToast();
-  const wsRef = useRef<WebSocket | null>(null);
   const retryTimeoutsRef = useRef<Record<number, NodeJS.Timeout>>({});
   const videoRefs = useRef<Record<number, HTMLVideoElement | null>>({});
-  const connectionRetryCount = useRef(0);
-  const lastConnectionAttempt = useRef(0);
 
   const MAX_RETRIES = 3;
   const RETRY_DELAY = 10000;
-  const MAX_CONNECTION_RETRIES = 5;
-  const CONNECTION_RETRY_DELAY = 5000;
 
   const { cameraStates, updateCameraState, initializeCameraState } = useCameraState();
   const { setupHLSPlayer, cleanupHLSPlayer, hlsInstancesRef } = useCameraHLS();
 
-  // Improved WebSocket connection with rate limiting
-  const connectWebSocket = () => {
-    const now = Date.now();
-    const timeSinceLastAttempt = now - lastConnectionAttempt.current;
-    
-    // Rate limiting: don't attempt connection too frequently
-    if (timeSinceLastAttempt < CONNECTION_RETRY_DELAY && connectionRetryCount.current > 0) {
-      onLog?.(`Rate limiting WebSocket connection attempt. Wait ${Math.ceil((CONNECTION_RETRY_DELAY - timeSinceLastAttempt) / 1000)}s`);
-      return;
-    }
-
-    if (connectionRetryCount.current >= MAX_CONNECTION_RETRIES) {
-      onLog?.(`Max WebSocket connection attempts reached (${MAX_CONNECTION_RETRIES}). Please check backend service.`);
-      setConnectionState('failed');
-      return;
-    }
-
-    // Close existing connection
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-
-    setConnectionState('connecting');
-    lastConnectionAttempt.current = now;
-    connectionRetryCount.current++;
-
-    const wsUrl = config.backend.wsUrl;
-    onLog?.(`Attempting WebSocket connection ${connectionRetryCount.current}/${MAX_CONNECTION_RETRIES} to ${wsUrl}`);
-
-    try {
-      const ws = new WebSocket(wsUrl);
-      
-      // Connection timeout
-      const connectionTimeout = setTimeout(() => {
-        if (ws.readyState === WebSocket.CONNECTING) {
-          ws.close();
-          onLog?.(`WebSocket connection timeout after 10s`);
-          setConnectionState('failed');
-          scheduleReconnection();
-        }
-      }, 10000);
-
-      ws.onopen = () => {
-        clearTimeout(connectionTimeout);
-        onLog?.(`WebSocket connected successfully to ${wsUrl}`);
-        setConnectionState('connected');
-        connectionRetryCount.current = 0; // Reset retry count on successful connection
-        wsRef.current = ws;
-      };
-
-      ws.onclose = (event) => {
-        clearTimeout(connectionTimeout);
-        onLog?.(`WebSocket disconnected (code: ${event.code}, reason: ${event.reason})`);
-        setConnectionState('disconnected');
-        wsRef.current = null;
-        
-        // Only attempt reconnection if not manually closed
-        if (event.code !== 1000 && connectionRetryCount.current < MAX_CONNECTION_RETRIES) {
-          scheduleReconnection();
-        }
-      };
-
-      ws.onerror = (error) => {
-        clearTimeout(connectionTimeout);
-        onLog?.(`WebSocket error: ${error.type} - backend server may not be running`);
-        setConnectionState('failed');
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          handleWebSocketMessage(data);
-        } catch (error) {
-          // Ignore JSON parse errors for non-JSON messages
-        }
-      };
-
-    } catch (error: any) {
-      onLog?.(`WebSocket connection failed: ${error.message}`);
-      setConnectionState('failed');
-      scheduleReconnection();
-    }
-  };
-
-  const scheduleReconnection = () => {
-    if (connectionRetryCount.current < MAX_CONNECTION_RETRIES) {
-      const delay = CONNECTION_RETRY_DELAY * Math.pow(2, connectionRetryCount.current - 1); // Exponential backoff
-      onLog?.(`Scheduling WebSocket reconnection in ${delay / 1000}s (attempt ${connectionRetryCount.current + 1}/${MAX_CONNECTION_RETRIES})`);
-      
-      setTimeout(() => {
-        if (connectionState !== 'connected') {
-          connectWebSocket();
-        }
-      }, delay);
-    }
-  };
-
+  // WebSocket message handler
   const handleWebSocketMessage = (data: any) => {
     if (data.type === "stream_status" && typeof data.cameraId !== "undefined") {
       const isStarted = data.status === "started";
@@ -210,6 +108,11 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
     }
   };
 
+  const { connectionState, connectionRetryCount, maxConnectionRetries, sendMessage, resetConnection } = useWebSocketManager({
+    onLog,
+    onMessage: handleWebSocketMessage
+  });
+
   // Load saved camera data on mount
   useEffect(() => {
     const savedUrls = localStorage.getItem('jericho-camera-urls');
@@ -241,19 +144,13 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
     localStorage.setItem('jericho-camera-names', JSON.stringify(cameraNames));
   }, [cameraNames]);
 
-  // Initialize WebSocket connection
+  // Cleanup on unmount
   useEffect(() => {
-    connectWebSocket();
-
     return () => { 
       Object.values(retryTimeoutsRef.current).forEach(timeout => clearTimeout(timeout));
       Object.keys(hlsInstancesRef.current).forEach(cameraId => {
         cleanupHLSPlayer(parseInt(cameraId), onLog);
       });
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
     };
   }, []);
 
@@ -337,13 +234,13 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
       hlsAvailable: false
     });
 
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'start_stream',
-        cameraId,
-        rtspUrl: url,
-      }));
-      
+    const success = sendMessage({
+      type: 'start_stream',
+      cameraId,
+      rtspUrl: url,
+    });
+    
+    if (success) {
       onLog?.(`Attempting to start Camera ${cameraId} stream (attempt ${cameraState.retryCount + 1}/${MAX_RETRIES})`);
     }
   };
@@ -363,11 +260,12 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
       hlsAvailable: false
     });
 
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'stop_stream',
-        cameraId,
-      }));
+    const success = sendMessage({
+      type: 'stop_stream',
+      cameraId,
+    });
+    
+    if (success) {
       setActiveStreams(prev => ({ ...prev, [cameraId]: false }));
       onLog?.(`Stopped Camera ${cameraId} stream`);
     }
@@ -423,6 +321,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
     }
   };
 
+  // HLS player setup effect
   useEffect(() => {
     const cameraIds = Array.from({ length: isFullscreen ? 12 : layout }, (_, i) =>
       ((currentPage - 1) * (isFullscreen ? 12 : layout)) + 1 + i
@@ -629,45 +528,15 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
 
   return (
     <div className="h-full">
-      {/* Connection status indicator */}
-      <div className="mb-2 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <div className={`w-2 h-2 rounded-full ${
-            connectionState === 'connected' ? 'bg-green-500' : 
-            connectionState === 'connecting' ? 'bg-yellow-500 animate-pulse' : 
-            connectionState === 'failed' ? 'bg-red-500' :
-            'bg-gray-500'
-          }`} />
-          <span className="text-xs text-gray-400">
-            Backend: {connectionState} 
-            {connectionRetryCount.current > 0 && ` (${connectionRetryCount.current}/${MAX_CONNECTION_RETRIES})`}
-          </span>
-        </div>
-        {connectionState === 'failed' && connectionRetryCount.current >= MAX_CONNECTION_RETRIES && (
-          <Button
-            onClick={() => {
-              connectionRetryCount.current = 0;
-              connectWebSocket();
-            }}
-            size="sm"
-            variant="outline"
-            className="text-xs"
-          >
-            Reconnect
-          </Button>
-        )}
-      </div>
+      <ConnectionStatusIndicator
+        connectionState={connectionState}
+        connectionRetryCount={connectionRetryCount}
+        maxConnectionRetries={maxConnectionRetries}
+        onReconnect={resetConnection}
+      />
 
       {!hasAnyCameras ? (
-        <div className="h-full flex items-center justify-center bg-gray-800/30">
-          <div className="text-center space-y-4">
-            <Camera className="w-16 h-16 mx-auto text-gray-500" />
-            <div>
-              <h3 className="text-xl font-semibold text-white mb-2">Welcome to Jericho Security</h3>
-              <p className="text-gray-400 mb-4">Your camera display is ready. Add cameras to get started.</p>
-            </div>
-          </div>
-        </div>
+        <EmptyCameraGrid />
       ) : (
         <div className={getGridClasses()}>
           {Array.from({ length: camerasToShow }, (_, i) => renderCamera(startCameraId + i))}
