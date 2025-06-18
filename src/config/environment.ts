@@ -1,4 +1,3 @@
-
 export interface EnvironmentConfig {
   name: 'demo' | 'production' | 'development';
   backend: {
@@ -48,8 +47,9 @@ const getBackendUrls = () => {
   
   return {
     apiUrl: `${window.location.protocol}//${hostname}:${backendPort}/api`,
-    wsUrl: `${isHttps ? 'wss' : 'ws'}://${hostname}:${backendPort}/api/ws`,
-    webrtcSignalingUrl: `${isHttps ? 'wss' : 'ws'}://${hostname}:${backendPort}/api/ws`,
+    // Fix: Backend WebSocket is at /ws, not /api/ws
+    wsUrl: `${isHttps ? 'wss' : 'ws'}://${hostname}:${backendPort}/ws`,
+    webrtcSignalingUrl: `${isHttps ? 'wss' : 'ws'}://${hostname}:${backendPort}/ws`,
   };
 };
 
@@ -151,10 +151,11 @@ export const getHikvisionConfig = () => config.hikvision;
 export const getBackendConfig = () => config.backend;
 export const getDemoConfig = () => config.demo;
 
-// Helper function to get JSMpeg WebSocket URL with proper port
+// Helper function to get JSMpeg WebSocket URL with proper port and path
 export const getJSMpegUrl = (cameraId: number): string => {
   const hostname = window.location.hostname || '192.168.0.138';
   const backendPort = '3001';
   const isHttps = window.location.protocol === 'https:';
+  // Fix: Backend JSMpeg WebSocket is at /jsmpeg, with camera ID in path
   return `${isHttps ? 'wss' : 'ws'}://${hostname}:${backendPort}/jsmpeg/${cameraId}`;
 };
