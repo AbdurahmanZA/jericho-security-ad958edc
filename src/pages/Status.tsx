@@ -19,6 +19,7 @@ import {
   Clock
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { RTSPStreamDiagnostics } from '@/components/RTSPStreamDiagnostics';
 
 interface HealthCheck {
   name: string;
@@ -461,6 +462,11 @@ const Status = () => {
             </AlertDescription>
           </Alert>
         )}
+
+        {/* RTSP Stream Diagnostics - NEW SECTION */}
+        <div>
+          <RTSPStreamDiagnostics />
+        </div>
 
         {/* Health Check Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
