@@ -10,14 +10,14 @@ echo "Installing JERICHO Security System - Simplified Version..."
 # Update system
 sudo apt update && sudo apt upgrade -y
 
-# Install core dependencies in one go
+# Install core dependencies in one go (removed npm since NodeSource nodejs includes it)
 sudo apt install -y \\
-  nodejs npm git apache2 ffmpeg \\
+  nodejs git apache2 ffmpeg \\
   asterisk asterisk-modules asterisk-config \\
   certbot python3-certbot-apache \\
   build-essential curl wget
 
-# Verify Node.js version (should be 18+ from Ubuntu 24.04 repos)
+# Verify Node.js version (should be 18+ from NodeSource or Ubuntu 24.04 repos)
 NODE_VERSION=\$(node --version | cut -d'v' -f2 | cut -d'.' -f1)
 if [ "\$NODE_VERSION" -lt 18 ]; then
   echo "Installing newer Node.js..."
