@@ -370,8 +370,11 @@ const Index = () => {
               onSnapshot={handleSnapshot}
               currentPage={currentPage}
               onLog={addLog}
-              onShowCameraSetup={() => setShowCameraSetup(true)}
-              showCameraSetupButton={true}
+              cameraUrls={cameraUrls}
+              cameraNames={cameraNames}
+              onCameraUrlsChange={setCameraUrls}
+              onCameraNamesChange={setCameraNames}
+              useUniversalPlayer={useUniversalPlayer}
             />
           </div>
 

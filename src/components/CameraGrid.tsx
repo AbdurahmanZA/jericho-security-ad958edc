@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -207,7 +208,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
         throw new Error('URL must start with rtsp://, http://, or https://');
       }
 
-      onCameraUrlsChange(prev => ({ ...prev, [cameraId]: url }));
+      onCameraUrlsChange({ ...cameraUrls, [cameraId]: url });
       setEditingCamera(null);
       setTempUrl('');
       
@@ -314,7 +315,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
 
   const handleNameSubmit = (cameraId: number) => {
     if (tempName.trim()) {
-      onCameraNamesChange(prev => ({ ...prev, [cameraId]: tempName.trim() }));
+      onCameraNamesChange({ ...cameraNames, [cameraId]: tempName.trim() });
       toast({
         title: "Camera Renamed",
         description: `Camera ${cameraId} renamed to "${tempName.trim()}"`,

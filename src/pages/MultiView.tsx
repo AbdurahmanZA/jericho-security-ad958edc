@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { CameraGrid } from '@/components/CameraGrid';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from "@/components/ui/toaster";
@@ -9,6 +9,20 @@ const MultiView = () => {
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
   const page = parseInt(searchParams.get('page') || '2', 10);
+  const [cameraUrls, setCameraUrls] = useState<Record<number, string>>({});
+  const [cameraNames, setCameraNames] = useState<Record<number, string>>({});
+
+  // Load saved camera data
+  useEffect(() => {
+    const savedUrls = localStorage.getItem('jericho-camera-urls');
+    const savedNames = localStorage.getItem('jericho-camera-names');
+    if (savedUrls) {
+      setCameraUrls(JSON.parse(savedUrls));
+    }
+    if (savedNames) {
+      setCameraNames(JSON.parse(savedNames));
+    }
+  }, []);
 
   const captureSnapshot = async (cameraId: number) => {
     try {
@@ -44,6 +58,11 @@ const MultiView = () => {
             isFullscreen={true}
             onSnapshot={captureSnapshot}
             currentPage={page}
+            cameraUrls={cameraUrls}
+            cameraNames={cameraNames}
+            onCameraUrlsChange={setCameraUrls}
+            onCameraNamesChange={setCameraNames}
+            useUniversalPlayer={true}
           />
         </main>
       </div>
