@@ -169,7 +169,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
           lastError: ''
         });
         onLog?.(`Camera ${data.cameraId} stream started successfully`);
-        setTimeout(() => checkHLSAvailability(data.cameraId), 3000);
+        // HLS availability will be managed by the HLS hook
       } else {
         updateCameraState(data.cameraId, {
           connectionStatus: 'idle',
