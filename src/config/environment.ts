@@ -1,3 +1,4 @@
+
 export interface EnvironmentConfig {
   name: 'demo' | 'production' | 'development';
   backend: {
@@ -39,17 +40,17 @@ const baseConfig = {
   },
 };
 
-// Auto-detect protocol and construct URLs dynamically with proper port handling
+// FIXED: Use Apache proxy (port 80) instead of direct backend connection (port 3001)
 const getBackendUrls = () => {
   const isHttps = window.location.protocol === 'https:';
   const hostname = window.location.hostname || '192.168.0.138';
-  const backendPort = '3001'; // Backend server runs on port 3001
+  // Use Apache proxy on standard HTTP/HTTPS ports instead of backend port 3001
   
   return {
-    apiUrl: `${window.location.protocol}//${hostname}:${backendPort}/api`,
-    // Fix: Backend WebSocket is at /ws, not /api/ws
-    wsUrl: `${isHttps ? 'wss' : 'ws'}://${hostname}:${backendPort}/ws`,
-    webrtcSignalingUrl: `${isHttps ? 'wss' : 'ws'}://${hostname}:${backendPort}/ws`,
+    apiUrl: `${window.location.protocol}//${hostname}/api`,
+    // WebSocket through Apache proxy, not direct to backend
+    wsUrl: `${isHttps ? 'wss' : 'ws'}://${hostname}/ws`,
+    webrtcSignalingUrl: `${isHttps ? 'wss' : 'ws'}://${hostname}/ws`,
   };
 };
 
@@ -151,11 +152,10 @@ export const getHikvisionConfig = () => config.hikvision;
 export const getBackendConfig = () => config.backend;
 export const getDemoConfig = () => config.demo;
 
-// Helper function to get JSMpeg WebSocket URL with proper port and path
+// FIXED: JSMpeg WebSocket URL now uses Apache proxy path
 export const getJSMpegUrl = (cameraId: number): string => {
   const hostname = window.location.hostname || '192.168.0.138';
-  const backendPort = '3001';
   const isHttps = window.location.protocol === 'https:';
-  // Fix: Backend JSMpeg WebSocket is at /jsmpeg, with camera ID in path
-  return `${isHttps ? 'wss' : 'ws'}://${hostname}:${backendPort}/jsmpeg/${cameraId}`;
+  // Use Apache proxy path instead of direct backend connection
+  return `${isHttps ? 'wss' : 'ws'}://${hostname}/jsmpeg/${cameraId}`;
 };
