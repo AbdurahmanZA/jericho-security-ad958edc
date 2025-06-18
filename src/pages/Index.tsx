@@ -11,7 +11,8 @@ import {
   Camera,
   Settings,
   Eye,
-  Menu
+  Menu,
+  Plus
 } from 'lucide-react';
 import { 
   Sidebar,
@@ -28,6 +29,8 @@ import SystemStatusBox from '@/components/SystemStatusBox';
 import QuickActions from '@/components/QuickActions';
 import StreamLogsDrawer from '@/components/StreamLogsDrawer';
 import BackendLogsDrawer from '@/components/BackendLogsDrawer';
+import { ComprehensiveCameraSetup } from '@/components/ComprehensiveCameraSetup';
+import { SaveLayoutButton } from '@/components/SaveLayoutButton';
 import { config } from '@/config/environment';
 
 const Index = () => {
@@ -43,6 +46,10 @@ const Index = () => {
   });
   const [streamLogsOpen, setStreamLogsOpen] = useState(false);
   const [backendLogsOpen, setBackendLogsOpen] = useState(false);
+  const [showCameraSetup, setShowCameraSetup] = useState(false);
+  const [cameraUrls, setCameraUrls] = useState<Record<number, string>>({});
+  const [cameraNames, setCameraNames] = useState<Record<number, string>>({});
+  const [useUniversalPlayer, setUseUniversalPlayer] = useState(true);
   
   const { toast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
@@ -166,6 +173,23 @@ const Index = () => {
     }
   };
 
+  const handleAddCameras = (cameras: Array<{ id: number; name: string; url: string; }>) => {
+    const newUrls = { ...cameraUrls };
+    const newNames = { ...cameraNames };
+    
+    cameras.forEach(camera => {
+      newUrls[camera.id] = camera.url;
+      newNames[camera.id] = camera.name;
+    });
+    
+    setCameraUrls(newUrls);
+    setCameraNames(newNames);
+    
+    if (addLog) {
+      addLog(`Added ${cameras.length} cameras from comprehensive setup`);
+    }
+  };
+
   const totalPages = isFullscreen ? 1 : Math.ceil(12 / layout);
 
   const handlePageChange = (page: number) => {
@@ -254,7 +278,7 @@ const Index = () => {
         )}
 
         <main className="flex-1 flex flex-col">
-          {/* Header - always show with persistent logo */}
+          {/* Enhanced Header with Camera Controls */}
           <div className="border-b border-slate-700 bg-slate-900/95 backdrop-blur-sm">
             <div className="px-6 py-4">
               <div className="flex items-center justify-between">
@@ -282,25 +306,57 @@ const Index = () => {
                   </div>
                 </div>
 
+                {/* Camera Controls Section */}
                 <div className="flex items-center space-x-4">
-                  <Button
-                    variant={isFullscreen ? "secondary" : "outline"}
-                    size="sm"
-                    onClick={() => setIsFullscreen(!isFullscreen)}
-                    className="bg-jericho-primary text-white border-jericho-primary hover:bg-jericho-dark-teal"
-                  >
-                    {isFullscreen ? (
-                      <>
-                        <Minimize2 className="w-4 h-4 mr-2" />
-                        Exit Fullscreen
-                      </>
-                    ) : (
-                      <>
-                        <Maximize2 className="w-4 h-4 mr-2" />
-                        Fullscreen
-                      </>
-                    )}
-                  </Button>
+                  <div className="flex items-center space-x-4 text-sm text-slate-400">
+                    <span>Page {currentPage} • {layout} cameras</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setUseUniversalPlayer(!useUniversalPlayer)}
+                      className={useUniversalPlayer ? "bg-green-600 text-white" : ""}
+                    >
+                      {useUniversalPlayer ? 'Universal Player' : 'Legacy Player'}
+                    </Button>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowCameraSetup(true)}
+                      className="bg-blue-600 text-white border-blue-600 hover:bg-blue-700"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Cameras
+                    </Button>
+                    
+                    <SaveLayoutButton
+                      layout={layout}
+                      currentPage={currentPage}
+                      cameraUrls={cameraUrls}
+                      cameraNames={cameraNames}
+                    />
+
+                    <Button
+                      variant={isFullscreen ? "secondary" : "outline"}
+                      size="sm"
+                      onClick={() => setIsFullscreen(!isFullscreen)}
+                      className="bg-jericho-primary text-white border-jericho-primary hover:bg-jericho-dark-teal"
+                    >
+                      {isFullscreen ? (
+                        <>
+                          <Minimize2 className="w-4 h-4 mr-2" />
+                          Exit Fullscreen
+                        </>
+                      ) : (
+                        <>
+                          <Maximize2 className="w-4 h-4 mr-2" />
+                          Fullscreen
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -314,6 +370,8 @@ const Index = () => {
               onSnapshot={handleSnapshot}
               currentPage={currentPage}
               onLog={addLog}
+              onShowCameraSetup={() => setShowCameraSetup(true)}
+              showCameraSetupButton={true}
             />
           </div>
 
@@ -361,6 +419,13 @@ const Index = () => {
           )}
         </main>
 
+        <ComprehensiveCameraSetup
+          open={showCameraSetup}
+          onClose={() => setShowCameraSetup(false)}
+          onAddCameras={handleAddCameras}
+          existingCameras={cameraUrls}
+        />
+        
         <StreamLogsDrawer 
           open={streamLogsOpen}
           onOpenChange={setStreamLogsOpen}

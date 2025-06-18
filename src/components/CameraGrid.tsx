@@ -18,9 +18,19 @@ interface CameraGridProps {
   onSnapshot: (cameraId: number) => void;
   currentPage?: number;
   onLog?: (msg: string) => void;
+  onShowCameraSetup?: () => void;
+  showCameraSetupButton?: boolean;
 }
 
-export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, onSnapshot, currentPage = 1, onLog }) => {
+export const CameraGrid: React.FC<CameraGridProps> = ({ 
+  layout, 
+  isFullscreen, 
+  onSnapshot, 
+  currentPage = 1, 
+  onLog,
+  onShowCameraSetup,
+  showCameraSetupButton = false
+}) => {
   const [cameraUrls, setCameraUrls] = useState<Record<number, string>>({});
   const [cameraNames, setCameraNames] = useState<Record<number, string>>({});
   const [activeStreams, setActiveStreams] = useState<Record<number, boolean>>({});
@@ -537,6 +547,14 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
   // Check if grid is empty (no cameras configured)
   const hasAnyCameras = Object.keys(cameraUrls).length > 0;
 
+  const handleCameraSetupOpen = () => {
+    if (onShowCameraSetup) {
+      onShowCameraSetup();
+    } else {
+      setShowCameraSetup(true);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col">
       {/* Control Bar */}
@@ -586,7 +604,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
                 <h3 className="text-xl font-semibold text-white mb-2">Welcome to Jericho Security</h3>
                 <p className="text-gray-400 mb-4">Your camera display is ready. Add cameras to get started.</p>
                 <Button
-                  onClick={() => setShowCameraSetup(true)}
+                  onClick={handleCameraSetupOpen}
                   className="bg-blue-600 text-white hover:bg-blue-700"
                 >
                   <Plus className="w-4 h-4 mr-2" />
@@ -602,12 +620,14 @@ export const CameraGrid: React.FC<CameraGridProps> = ({ layout, isFullscreen, on
         )}
       </div>
 
-      <ComprehensiveCameraSetup
-        open={showCameraSetup}
-        onClose={() => setShowCameraSetup(false)}
-        onAddCameras={handleAddCameras}
-        existingCameras={cameraUrls}
-      />
+      {!onShowCameraSetup && (
+        <ComprehensiveCameraSetup
+          open={showCameraSetup}
+          onClose={() => setShowCameraSetup(false)}
+          onAddCameras={handleAddCameras}
+          existingCameras={cameraUrls}
+        />
+      )}
     </div>
   );
 };
